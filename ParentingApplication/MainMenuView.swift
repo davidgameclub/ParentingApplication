@@ -16,6 +16,7 @@ struct MainMenuView: View {
         case home
         case activity
         case stats
+        case graph
         case settings
     }
     
@@ -37,7 +38,7 @@ struct MainMenuView: View {
                 ActivityView()
             }
             .tabItem {
-                Label("Activity", systemImage: "calendar")
+                Label("Activityyyyyy", systemImage: "calendar")
             }
             .tag(Tab.activity)
             
@@ -50,7 +51,16 @@ struct MainMenuView: View {
             }
             .tag(Tab.stats)
             
-            // 4. Settings Tab
+            // 4. Graph Tab (New)
+            NavigationStack {
+                GraphView()
+            }
+            .tabItem {
+                Label("Graph", systemImage: "chart.xyaxis.line")
+            }
+            .tag(Tab.graph)
+            
+            // 5. Settings Tab
             NavigationStack { // FIX 1: Wrapping in NavigationStack (Standardizing)
                 SettingsView()
             }

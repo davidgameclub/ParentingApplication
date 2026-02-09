@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct ParentingApplication_secondApp: App {
+struct ParentingApplication: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
