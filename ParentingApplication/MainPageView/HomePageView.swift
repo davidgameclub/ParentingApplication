@@ -176,6 +176,9 @@ struct ButtonDestinationView: View {
     let buttonCase: HomePageButtonCase
     let onDismiss: () -> Void // Callback closure added
     
+    // State specific to Button 1's inputs
+    @State private var selectedTime = Date()
+    
     // State specific to Button 2's inputs
     @State private var textInput: String = ""
     @State private var sliderValue: Double = 50.0
@@ -184,14 +187,16 @@ struct ButtonDestinationView: View {
         VStack {
             // Content Area
             if buttonCase == .button1 {
-                // Specific content for Button 1: Date Picker
-                DatePicker("Select Date", selection: .constant(Date())) // Note: In a real app, this date needs state binding
-                    .datePickerStyle(.wheel)
-                    .padding()
-                
-                Text("Date configuration for Button 1")
-                    .font(.subheadline)
-                    .padding(.bottom, 30)
+                VStack(spacing: 20) {
+                    Text("起床時間")
+                        .font(.headline)
+                    
+                    DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                }
+                .padding()
+
             } else if buttonCase == .button2 {
                 // Specific content for Button 2: Text Field and Slider
                 VStack(spacing: 30) {
@@ -228,7 +233,7 @@ struct ButtonDestinationView: View {
                 if buttonCase == .button1 {
                     Button("Confirm") {
                         // Logic to handle confirmation (e.g., save the date)
-                        print("Button 1 Confirmed Date")
+                        print("Button 1 Confirmed Time: \(selectedTime.formatted(date: .omitted, time: .shortened))")
                         onDismiss()
                     }
                     .buttonStyle(.borderedProminent)
