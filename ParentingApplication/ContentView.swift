@@ -70,22 +70,34 @@ struct ContentView: View {
                         }
                         .scrollContentBackground(.hidden)
                     } else {
-                        VStack {
+                        VStack(spacing: 0) {
+                            // 頂部灰色色塊
+                            HStack {
+                                Spacer()
+                                Text("設定寶寶資料")
+                                    .font(.title)
+                                    .foregroundStyle(.black)
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color(UIColor.systemGray5))
+                            
                             Spacer()
-                            VStack(spacing: 24) {
-                                Text("寶寶的名字是啥呢？")
+
+                            VStack(spacing: 36) {
+                                Text("寶寶暱稱")
                                     .font(.title2)
                                     .bold()
                                 
                                 VStack(spacing: 12) {
-                                    TextField("Enter name", text: $name)
+                                    TextField("輸入", text: $name)
                                         .textFieldStyle(.roundedBorder)
                                         .textContentType(.name)
                                         .multilineTextAlignment(.center)
                                         .font(.title3)
-                                        .padding(.horizontal, 40)
+                                        .padding(.horizontal, 60)
                                     
-                                    Text("寫寶寶的乳名也可以喔")
+                                    Text("請輸入寶寶暱稱或乳名")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                 }
@@ -101,11 +113,12 @@ struct ContentView: View {
                                         .padding()
                                         .background(name.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
                                         .foregroundColor(.white)
-                                        .cornerRadius(12)
+                                        .cornerRadius(30)
                                 }
                                 .disabled(name.isEmpty)
-                                .padding(.horizontal, 40)
+                                .padding(.horizontal, 120)
                             }
+                            
                             Spacer()
                             Spacer()
                         }
@@ -120,7 +133,6 @@ struct ContentView: View {
                         .zIndex(1)
                 }
             }
-            .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $navigateToGender) {
                 GenderView(name: name) {
