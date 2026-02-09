@@ -38,7 +38,7 @@ struct MainMenuView: View {
                 ActivityView()
             }
             .tabItem {
-                Label("Activityyyyyy", systemImage: "calendar")
+                Label("Activity", systemImage: "calendar")
             }
             .tag(Tab.activity)
             
