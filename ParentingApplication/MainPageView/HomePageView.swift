@@ -52,6 +52,59 @@ struct TimelineRowView: View {
     }
 }
 
+// 新增：日期選擇器表單視圖，包含頂部工具列
+struct TimelineDatePickerSheet: View {
+    @Binding var currentDate: Date
+    @Binding var isPresented: Bool
+    
+    // 修改：使用暫存狀態來控制滾輪選擇，避免直接修改外部 currentDate
+    @State private var tempDate: Date = Date()
+    
+    var body: some View {
+        VStack {
+            // 頂部按鈕列：取消、跳至今天、確認
+            HStack {
+                Button("取消") {
+                    // 取消時直接關閉，不更新 currentDate
+                    isPresented = false
+                }
+                .foregroundColor(.red)
+                
+                Spacer()
+                
+                Button("今天") {
+                    // 更新滾輪位置到今天，但尚未確認
+                    tempDate = Date()
+                }
+                .foregroundColor(.blue)
+                
+                Spacer()
+                
+                Button("確認") {
+                    // 按下確認後，才將暫存的日期應用到 currentDate
+                    currentDate = tempDate
+                    isPresented = false
+                }
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+            }
+            .padding()
+            //.background(Color(UIColor.systemGray6))
+            
+            // 滾輪式日期選擇器，綁定到 tempDate
+            DatePicker("Select Date", selection: $tempDate, displayedComponents: .date)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
+                .padding()
+        }
+        .onAppear {
+            // 視圖出現時，將暫存日期初始化為當前日期
+            tempDate = currentDate
+        }
+    }
+}
+
 // 3. 複雜的時間軸視圖，包含日期切換和垂直滾動
 struct DailyTimelineView: View {
     //當前選中的日期
@@ -59,6 +112,9 @@ struct DailyTimelineView: View {
     
     //狀態用於控制垂直滾動的錨點
     @State private var internalScrollPosition: Date
+    
+    // 控制日期選擇器的顯示
+    @State private var showDatePicker = false
     
     init(currentDate: Binding<Date>) {
         self._currentDate = currentDate
@@ -85,6 +141,21 @@ struct DailyTimelineView: View {
         }
     }
     
+    // 自定義日期格式化字串
+    private var formattedDateString: String {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: currentDate)
+        let month = calendar.component(.month, from: currentDate)
+        let day = calendar.component(.day, from: currentDate)
+        let weekday = calendar.component(.weekday, from: currentDate)
+        
+        let weekdays = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"]
+        // weekday 1 是週日，陣列索引從 0 開始
+        let weekdayStr = weekdays[(weekday - 1) % 7]
+        
+        return "\(year)年\(month)月\(day)日 \(weekdayStr)"
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // --- 日期切換頂部區域 (只顯示當天日期) ---
@@ -98,11 +169,21 @@ struct DailyTimelineView: View {
                 }
                 .padding(.leading) // Add padding to the left button
                 
-                Text(currentDate, format: .dateTime.day().month().weekday())
-                    .font(.title2)
-                    .bold()
-                    .foregroundColor(.blue)
-                    .frame(maxWidth: .infinity) // 佔滿寬度
+                // 修改：將 Text 改為 Button 以觸發日期選擇
+                Button(action: {
+                    showDatePicker = true
+                }) {
+                    // 使用自定義拼接的字串格式 (例如：2023年10月27日 週五)
+                    Text(formattedDateString)
+                        .font(.title2)
+                        .bold()
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity) // 佔滿寬度
+                }
+                .sheet(isPresented: $showDatePicker) {
+                    TimelineDatePickerSheet(currentDate: $currentDate, isPresented: $showDatePicker)
+                        .presentationDetents([.medium]) // 設置 Sheet 高度為中等
+                }
                 
                 Button(action: {
                     updateDate(offset: 1) // Increment date
@@ -264,7 +345,7 @@ struct HomePageView: View {
         // 初始化：設置為今天的 5 AM
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        _selectedDate = State(initialValue: calendar.date(bySettingHour: 5, minute: 0, second: 0, of: today)!)
+        _selectedDate = State(initialValue: calendar.date(bySettingHour: 0, minute: 0, second: 0, of: today)!)
     }
 
     var body: some View {
