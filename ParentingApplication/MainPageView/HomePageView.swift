@@ -6,8 +6,37 @@
 //
 
 import SwiftUI
+import Foundation
+import SwiftData
 
-// --- 新增：日期管理與時間軸相關類型 ---
+//Command Object Class================================================================================
+
+@Model
+class WakeupActivity {
+    var timestamp: Date
+    var note: String
+
+    init(timestamp : Date, note : String) {
+        self.timestamp = timestamp
+        self.note = note
+    }
+}
+
+@Model
+class FeedingBottleActivity {
+    var timestamp: Date
+    var note: String
+    
+    var volume: Int
+    
+    init(timestamp : Date, note : String, volume : Int) {
+        self.timestamp = timestamp
+        self.note = note
+        self.volume = volume
+    }
+}
+
+//================================================================================
 
 // 1. 數據模型
 struct TimelineEvent: Identifiable {
