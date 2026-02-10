@@ -110,16 +110,14 @@ struct DailyTimelineView: View {
     //當前選中的日期
     @Binding var currentDate: Date
     
-    //狀態用於控制垂直滾動的錨點
-    @State private var internalScrollPosition: Date
-    
     // 控制日期選擇器的顯示
     @State private var showDatePicker = false
     
+    // 控制日期切換動畫方向
+    @State private var slideEdge: Edge = .trailing
+    
     init(currentDate: Binding<Date>) {
         self._currentDate = currentDate
-        //初始化內部滾動位置為當前日期對應的時間
-        _internalScrollPosition = State(initialValue: currentDate.wrappedValue)
     }
     
     //模擬事件數據（為了演示，我們在視圖內部生成）
@@ -136,8 +134,25 @@ struct DailyTimelineView: View {
     private func updateDate(offset: Int) {
         let calendar = Calendar.current
         if let newDate = calendar.date(byAdding: .day, value: offset, to: currentDate) {
-            // 只更新日期部分，保持時間為 00:00
-            currentDate = calendar.startOfDay(for: newDate)
+            
+            // 設定動畫方向
+            // 按下左邊按鈕 (offset < 0): 代表上一天，新視圖應該從左邊 (.leading) 進入，舊的往右退
+            // 按下右邊按鈕 (offset > 0): 代表下一天，新視圖應該從右邊 (.trailing) 進入，舊的往左退
+            slideEdge = offset < 0 ? .leading : .trailing
+
+            withAnimation(.easeInOut(duration: 0.3)) {
+                // 只更新日期部分，保持時間為 00:00
+                currentDate = calendar.startOfDay(for: newDate)
+            }
+        }
+    }
+    
+    // 輔助函數：滾動到當前時間
+    private func scrollToCurrentTime(proxy: ScrollViewProxy) {
+        let calendar = Calendar.current
+        let targetHour = calendar.component(.hour, from: Date())
+        if let initialTime = calendar.date(bySettingHour: targetHour, minute: 0, second: 0, of: currentDate) {
+            proxy.scrollTo(initialTime, anchor: .top)
         }
     }
     
@@ -197,38 +212,35 @@ struct DailyTimelineView: View {
                 .padding(.trailing) // Add padding to the right button
             }
             .padding(.vertical, 10)
-            .animation(.easeInOut, value: currentDate) // Add animation for date header changes
             
             // --- 24小時時間軸區域 (垂直滾動) ---
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        //渲染 24 個小時的時間標籤和活動區域
-                        ForEach(eventsForCurrentDate) { event in
-                            TimelineRowView(event: event)
-                                // 使用包含小時的完整日期作為垂直滾動的唯一 ID
-                                .id(event.date)
+            // 使用 ZStack 來作為動畫容器，這能讓舊視圖滑出時，新視圖在上方/下方滑入，而不影響佈局高度
+            ZStack {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            //渲染 24 個小時的時間標籤和活動區域
+                            ForEach(eventsForCurrentDate) { event in
+                                TimelineRowView(event: event)
+                                    // 使用包含小時的完整日期作為垂直滾動的唯一 ID
+                                    .id(event.date)
+                            }
                         }
                     }
-                }
-                // 垂直滾動同步：當 currentDate 變化時，滾動到當天當前小時
-                .onChange(of: currentDate) { oldDate, newDate in
-                    let calendar = Calendar.current
-                    let targetHour = calendar.component(.hour, from: Date())
-                    
-                    if let initialTime = calendar.date(bySettingHour: targetHour, minute: 0, second: 0, of: newDate) {
-                        proxy.scrollTo(initialTime, anchor: .top)
+                    .background(Color.white) // 加上背景色，防止疊加時透視
+                    .onAppear {
+                        // 視圖出現（或重建）時滾動到當前時間
+                        scrollToCurrentTime(proxy: proxy)
                     }
                 }
-                .onAppear {
-                    //首次加載時，滾動到當前時間
-                    let calendar = Calendar.current
-                    let targetHour = calendar.component(.hour, from: Date())
-                    if let initialTime = calendar.date(bySettingHour: targetHour, minute: 0, second: 0, of: currentDate) {
-                        proxy.scrollTo(initialTime, anchor: .top)
-                    }
-                }
+                // 將 ID 和 Transition 綁定到 ScrollViewReader (或其容器)
+                .id(currentDate)
+                .transition(.asymmetric(
+                    insertion: .move(edge: slideEdge),
+                    removal: .move(edge: slideEdge == .leading ? .trailing : .leading)
+                ))
             }
+            .clipped() // 確保滑動時內容不會超出邊界
         }
     }
 }
