@@ -61,7 +61,7 @@ struct TimelineDatePickerSheet: View {
     @State private var tempDate: Date = Date()
     
     var body: some View {
-        VStack {
+        VStack(spacing: 0) { // 使用 spacing: 0 讓佈局更緊湊
             // 頂部按鈕列：取消、跳至今天、確認
             HStack {
                 Button("取消") {
@@ -89,7 +89,6 @@ struct TimelineDatePickerSheet: View {
                 .foregroundColor(.blue)
             }
             .padding()
-            //.background(Color(UIColor.systemGray6))
             
             // 滾輪式日期選擇器，綁定到 tempDate
             DatePicker("Select Date", selection: $tempDate, displayedComponents: .date)
@@ -97,6 +96,7 @@ struct TimelineDatePickerSheet: View {
                 .labelsHidden()
                 .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
                 .padding()
+                .layoutPriority(1) // 確保選擇器優先佔用空間
         }
         .onAppear {
             // 視圖出現時，將暫存日期初始化為當前日期
@@ -182,7 +182,9 @@ struct DailyTimelineView: View {
                 }
                 .sheet(isPresented: $showDatePicker) {
                     TimelineDatePickerSheet(currentDate: $currentDate, isPresented: $showDatePicker)
-                        .presentationDetents([.medium]) // 設置 Sheet 高度為中等
+                        // 修改：增加高度至 350 或 medium，避免內容被遮擋
+                        .presentationDetents([.height(350), .medium])
+                        .presentationDragIndicator(.visible)
                 }
                 
                 Button(action: {
