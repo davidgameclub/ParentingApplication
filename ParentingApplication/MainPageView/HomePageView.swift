@@ -241,6 +241,21 @@ struct DailyTimelineView: View {
                 ))
             }
             .clipped() // 確保滑動時內容不會超出邊界
+            // 新增：手勢識別器
+            .gesture(
+                DragGesture()
+                    .onEnded { value in
+                        let threshold: CGFloat = 50 // 判定為滑動的最小距離
+                        
+                        if value.translation.width > threshold {
+                            // 向右滑 (手指往右移) -> 上一天 (邏輯同左箭頭按鈕)
+                            updateDate(offset: -1)
+                        } else if value.translation.width < -threshold {
+                            // 向左滑 (手指往左移) -> 下一天 (邏輯同右箭頭按鈕)
+                            updateDate(offset: 1)
+                        }
+                    }
+            )
         }
     }
 }
