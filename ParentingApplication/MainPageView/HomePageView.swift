@@ -26,6 +26,40 @@ class AppState {
     }
 }
 
+// 用於包裝不同活動的 Identifiable 類型，方便編輯時查找
+enum ActivityItem: Identifiable {
+    case wakeup(WakeupActivity)
+    case sleep(SleepActivity)
+    
+    var id: PersistentIdentifier {
+        switch self {
+        case .wakeup(let a): return a.persistentModelID
+        case .sleep(let a): return a.persistentModelID
+        }
+    }
+    
+    var timestamp: Date {
+        switch self {
+        case .wakeup(let a): return a.timestamp
+        case .sleep(let a): return a.timestamp
+        }
+    }
+    
+    var note: String {
+        switch self {
+        case .wakeup(let a): return a.note
+        case .sleep(let a): return a.note
+        }
+    }
+    
+    var typeTitle: String {
+        switch self {
+        case .wakeup: return "起床"
+        case .sleep: return "睡覺"
+        }
+    }
+}
+
 //Command Object Class================================================================================
 
 @Model
@@ -159,6 +193,9 @@ struct DailyTimelineView: View {
     @Query private var wakeups: [WakeupActivity]
     @Query private var sleeps: [SleepActivity]
     
+    // 用於開啟編輯視圖的狀態
+    @State private var editingActivity: ActivityItem?
+    
     private let hourHeight: CGFloat = 50.0
     private let timeLabelWidth: CGFloat = 50.0
     
@@ -219,16 +256,16 @@ struct DailyTimelineView: View {
         return blocks
     }
 
-    // 取得當天具體的活動標記
-    private var todayActivities: [(timestamp: Date, type: String)] {
+    // 取得當天具體的活動對象 (包含原始 Model 引用)
+    private var todayActivityItems: [ActivityItem] {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
-        let w = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ($0.timestamp, "wakeup") }
-        let s = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ($0.timestamp, "sleep") }
+        let w = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.wakeup($0) }
+        let s = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.sleep($0) }
 
-        return (w + s).sorted { $0.0 < $1.0 }
+        return (w + s).sorted { $0.timestamp < $1.timestamp }
     }
     
     private func updateDate(offset: Int) {
@@ -293,20 +330,25 @@ struct DailyTimelineView: View {
                                     .offset(x: timeLabelWidth, y: block.start)
                             }
 
-                            // 第二層：起床/睡覺方形按鈕標籤 (位於區塊中間)
-                            ForEach(0..<todayActivities.count, id: \.self) { index in
-                                let activity = todayActivities[index]
-                                let isWakeup = activity.type == "wakeup"
+                            // 第二層：起床/睡覺方形按鈕標籤
+                            ForEach(todayActivityItems) { item in
+                                let isWakeup: Bool = {
+                                    if case .wakeup = item { return true }
+                                    return false
+                                }()
                                 
-                                Text(isWakeup ? "起床" : "睡覺")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(isWakeup ? Color.orange : Color.indigo)
-                                    .cornerRadius(4)
-                                    // 水平置中於 1/4 區塊，垂直對齊分鐘
-                                    .offset(x: timeLabelWidth + (columnWidth / 2) - 15, y: yOffset(for: activity.timestamp) - 10)
+                                Button(action: {
+                                    editingActivity = item
+                                }) {
+                                    Text(item.typeTitle)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(isWakeup ? Color.orange : Color.indigo)
+                                        .cornerRadius(4)
+                                }
+                                .offset(x: timeLabelWidth + (columnWidth / 2) - 15, y: yOffset(for: item.timestamp) - 10)
                             }
 
                             // 第三層：時間軸格線與活動
@@ -349,10 +391,114 @@ struct DailyTimelineView: View {
                 }
             )
         }
+        .sheet(item: $editingActivity) { item in
+            ActivityEditView(item: item) {
+                editingActivity = nil
+            }
+            .presentationDetents([.medium])
+        }
     }
 }
 
-// 按鈕功能輸入頁面
+// 指令編輯與刪除畫面
+struct ActivityEditView: View {
+    let item: ActivityItem
+    let onDismiss: () -> Void
+    
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState
+    
+    @State private var selectedTime: Date
+    @State private var note: String
+    
+    init(item: ActivityItem, onDismiss: @escaping () -> Void) {
+        self.item = item
+        self.onDismiss = onDismiss
+        // 初始化 State 為目前的資料內容
+        _selectedTime = State(initialValue: item.timestamp)
+        _note = State(initialValue: item.note)
+    }
+    
+    private func saveChanges() {
+        let calendar = Calendar.current
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: appState.currentDate)
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: selectedTime)
+        var combined = DateComponents()
+        combined.year = dateComponents.year
+        combined.month = dateComponents.month
+        combined.day = dateComponents.day
+        combined.hour = timeComponents.hour
+        combined.minute = timeComponents.minute
+        
+        let finalDate = calendar.date(from: combined) ?? selectedTime
+        
+        switch item {
+        case .wakeup(let activity):
+            activity.timestamp = finalDate
+            activity.note = note
+        case .sleep(let activity):
+            activity.timestamp = finalDate
+            activity.note = note
+        }
+        
+        try? modelContext.save()
+        onDismiss()
+    }
+    
+    private func deleteActivity() {
+        switch item {
+        case .wakeup(let activity):
+            modelContext.delete(activity)
+        case .sleep(let activity):
+            modelContext.delete(activity)
+        }
+        try? modelContext.save()
+        onDismiss()
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("編輯\(item.typeTitle)行程").font(.headline).padding(.top)
+                
+                DatePicker("時間", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                
+                TextField("備註", text: $note)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal)
+                
+                Spacer()
+                
+                Button(role: .destructive, action: deleteActivity) {
+                    HStack {
+                        Image(systemName: "trash")
+                        Text("刪除此紀錄")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal)
+            }
+            .padding(.bottom)
+            .background(appDeepGray.ignoresSafeArea())
+            .preferredColorScheme(.dark)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { onDismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("儲存") { saveChanges() }.fontWeight(.bold)
+                }
+            }
+        }
+    }
+}
+
+// 按鈕功能輸入頁面 (新增用)
 @MainActor
 struct ButtonDestinationView: View {
     let buttonCase: HomePageButtonCase
@@ -381,7 +527,7 @@ struct ButtonDestinationView: View {
         VStack {
             if buttonCase == .wakeup || buttonCase == .sleep {
                 VStack(spacing: 20) {
-                    Text(buttonCase == .wakeup ? "起床時間" : "睡覺時間").font(.headline)
+                    Text(buttonCase == .wakeup ? "新增起床時間" : "新增睡覺時間").font(.headline)
                     DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
                         .datePickerStyle(.wheel).labelsHidden()
                     TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
