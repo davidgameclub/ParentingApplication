@@ -219,6 +219,10 @@ struct DailyTimelineView: View {
     // 計算當天的活動狀態區塊
     private var statusBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
         let calendar = Calendar.current
+        let now = Date()
+        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: now)
+        let nowY = yOffset(for: now)
+        
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         
@@ -233,24 +237,46 @@ struct DailyTimelineView: View {
         
         var blocks: [(start: CGFloat, end: CGFloat, color: Color)] = []
         
+        // 第一區塊：從 00:00 到第一個活動
         if let first = sorted.first {
             let startY = 0.0
-            let endY = yOffset(for: first.t)
+            var endY = yOffset(for: first.t)
+            
+            // 如果是今天，不超過現在時間
+            if isToday {
+                endY = min(endY, nowY)
+            }
+            
             let color = (first.s == "wakeup") ? Color.white : Color.yellow
-            blocks.append((startY, endY, color))
+            if startY < endY {
+                blocks.append((startY, endY, color))
+            }
         }
         
+        // 中間與結尾區塊
         for i in 0..<sorted.count {
             let current = sorted[i]
             let startY = yOffset(for: current.t)
-            let endY: CGFloat
+            
+            // 如果起始時間已經超過現在時間（且是今天），就不再畫色塊
+            if isToday && startY >= nowY { break }
+            
+            var endY: CGFloat
             if i < sorted.count - 1 {
                 endY = yOffset(for: sorted[i+1].t)
             } else {
                 endY = 24 * hourHeight
             }
+            
+            // 如果是今天，結束時間不超過現在時間
+            if isToday {
+                endY = min(endY, nowY)
+            }
+            
             let color = (current.s == "wakeup") ? Color.yellow : Color.white
-            blocks.append((startY, endY, color))
+            if startY < endY {
+                blocks.append((startY, endY, color))
+            }
         }
         
         return blocks
@@ -346,7 +372,7 @@ struct DailyTimelineView: View {
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
                                         .background(isWakeup ? Color.orange : Color.indigo)
-                                        .cornerRadius(4)
+                                        .classCornerRadius(4)
                                 }
                                 .offset(x: timeLabelWidth + (columnWidth / 2) - 15, y: yOffset(for: item.timestamp) - 10)
                             }
@@ -648,3 +674,9 @@ struct HomePageView: View {
     }
 }
 
+// 輔助擴充以避免編譯警告
+extension View {
+    func classCornerRadius(_ radius: CGFloat) -> some View {
+        self.cornerRadius(radius)
+    }
+}
