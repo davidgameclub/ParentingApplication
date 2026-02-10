@@ -8,6 +8,20 @@
 import SwiftUI
 import Foundation
 import SwiftData
+import Observation
+
+// 全域狀態管理類別 (Global State Class)
+@Observable
+class AppState {
+    var currentDate: Date
+    
+    init() {
+        // 初始化為今天的 00:00
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        self.currentDate = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: today)!
+    }
+}
 
 //Command Object Class================================================================================
 
@@ -83,7 +97,9 @@ struct TimelineRowView: View {
 
 // 新增：日期選擇器表單視圖，包含頂部工具列
 struct TimelineDatePickerSheet: View {
-    @Binding var currentDate: Date
+    // 改用全域環境變數
+    @Environment(AppState.self) private var appState
+    
     @Binding var isPresented: Bool
     
     // 修改：使用暫存狀態來控制滾輪選擇，避免直接修改外部 currentDate
@@ -110,8 +126,8 @@ struct TimelineDatePickerSheet: View {
                 Spacer()
                 
                 Button("確認") {
-                    // 按下確認後，才將暫存的日期應用到 currentDate
-                    currentDate = tempDate
+                    // 按下確認後，才將暫存的日期應用到全域 currentDate
+                    appState.currentDate = tempDate
                     isPresented = false
                 }
                 .fontWeight(.bold)
@@ -128,16 +144,16 @@ struct TimelineDatePickerSheet: View {
                 .layoutPriority(1) // 確保選擇器優先佔用空間
         }
         .onAppear {
-            // 視圖出現時，將暫存日期初始化為當前日期
-            tempDate = currentDate
+            // 視圖出現時，將暫存日期初始化為當前全域日期
+            tempDate = appState.currentDate
         }
     }
 }
 
 // 3. 複雜的時間軸視圖，包含日期切換和垂直滾動
 struct DailyTimelineView: View {
-    //當前選中的日期
-    @Binding var currentDate: Date
+    // 改用全域環境變數，不再需要 @Binding
+    @Environment(AppState.self) private var appState
     
     // 控制日期選擇器的顯示
     @State private var showDatePicker = false
@@ -145,14 +161,12 @@ struct DailyTimelineView: View {
     // 控制日期切換動畫方向
     @State private var slideEdge: Edge = .trailing
     
-    init(currentDate: Binding<Date>) {
-        self._currentDate = currentDate
-    }
+    // 不需要 init，因為現在使用環境物件
     
     //模擬事件數據（為了演示，我們在視圖內部生成）
     private var eventsForCurrentDate: [TimelineEvent] {
         let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: currentDate)
+        let startOfDay = calendar.startOfDay(for: appState.currentDate)
         
         return (0..<24).map { hour in
             let specificDate = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: startOfDay)!
@@ -162,16 +176,14 @@ struct DailyTimelineView: View {
     
     private func updateDate(offset: Int) {
         let calendar = Calendar.current
-        if let newDate = calendar.date(byAdding: .day, value: offset, to: currentDate) {
+        if let newDate = calendar.date(byAdding: .day, value: offset, to: appState.currentDate) {
             
             // 設定動畫方向
-            // 按下左邊按鈕 (offset < 0): 代表上一天，新視圖應該從左邊 (.leading) 進入，舊的往右退
-            // 按下右邊按鈕 (offset > 0): 代表下一天，新視圖應該從右邊 (.trailing) 進入，舊的往左退
             slideEdge = offset < 0 ? .leading : .trailing
 
             withAnimation(.easeInOut(duration: 0.3)) {
                 // 只更新日期部分，保持時間為 00:00
-                currentDate = calendar.startOfDay(for: newDate)
+                appState.currentDate = calendar.startOfDay(for: newDate)
             }
         }
     }
@@ -180,7 +192,7 @@ struct DailyTimelineView: View {
     private func scrollToCurrentTime(proxy: ScrollViewProxy) {
         let calendar = Calendar.current
         let targetHour = calendar.component(.hour, from: Date())
-        if let initialTime = calendar.date(bySettingHour: targetHour, minute: 0, second: 0, of: currentDate) {
+        if let initialTime = calendar.date(bySettingHour: targetHour, minute: 0, second: 0, of: appState.currentDate) {
             proxy.scrollTo(initialTime, anchor: .top)
         }
     }
@@ -188,13 +200,12 @@ struct DailyTimelineView: View {
     // 自定義日期格式化字串
     private var formattedDateString: String {
         let calendar = Calendar.current
-        let year = calendar.component(.year, from: currentDate)
-        let month = calendar.component(.month, from: currentDate)
-        let day = calendar.component(.day, from: currentDate)
-        let weekday = calendar.component(.weekday, from: currentDate)
+        let year = calendar.component(.year, from: appState.currentDate)
+        let month = calendar.component(.month, from: appState.currentDate)
+        let day = calendar.component(.day, from: appState.currentDate)
+        let weekday = calendar.component(.weekday, from: appState.currentDate)
         
         let weekdays = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"]
-        // weekday 1 是週日，陣列索引從 0 開始
         let weekdayStr = weekdays[(weekday - 1) % 7]
         
         return "\(year)年\(month)月\(day)日 \(weekdayStr)"
@@ -217,7 +228,6 @@ struct DailyTimelineView: View {
                 Button(action: {
                     showDatePicker = true
                 }) {
-                    // 使用自定義拼接的字串格式 (例如：2023年10月27日 週五)
                     Text(formattedDateString)
                         .font(.title2)
                         .bold()
@@ -225,7 +235,7 @@ struct DailyTimelineView: View {
                         .frame(maxWidth: .infinity) // 佔滿寬度
                 }
                 .sheet(isPresented: $showDatePicker) {
-                    TimelineDatePickerSheet(currentDate: $currentDate, isPresented: $showDatePicker)
+                    TimelineDatePickerSheet(isPresented: $showDatePicker)
                         // 修改：增加高度至 350 或 medium，避免內容被遮擋
                         .presentationDetents([.height(350), .medium])
                         .presentationDragIndicator(.visible)
@@ -243,7 +253,7 @@ struct DailyTimelineView: View {
             .padding(.vertical, 10)
             
             // --- 24小時時間軸區域 (垂直滾動) ---
-            // 使用 ZStack 來作為動畫容器，這能讓舊視圖滑出時，新視圖在上方/下方滑入，而不影響佈局高度
+            // 使用 ZStack 來作為動畫容器
             ZStack {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -256,31 +266,29 @@ struct DailyTimelineView: View {
                             }
                         }
                     }
-                    .background(Color.white) // 加上背景色，防止疊加時透視
+                    .background(Color.white)
                     .onAppear {
                         // 視圖出現（或重建）時滾動到當前時間
                         scrollToCurrentTime(proxy: proxy)
                     }
                 }
-                // 將 ID 和 Transition 綁定到 ScrollViewReader (或其容器)
-                .id(currentDate)
+                // 使用全域日期作為 ID 觸發轉場
+                .id(appState.currentDate)
                 .transition(.asymmetric(
                     insertion: .move(edge: slideEdge),
                     removal: .move(edge: slideEdge == .leading ? .trailing : .leading)
                 ))
             }
-            .clipped() // 確保滑動時內容不會超出邊界
-            // 新增：手勢識別器
+            .clipped()
+            // 手勢識別器
             .gesture(
                 DragGesture()
                     .onEnded { value in
-                        let threshold: CGFloat = 50 // 判定為滑動的最小距離
+                        let threshold: CGFloat = 50 
                         
                         if value.translation.width > threshold {
-                            // 向右滑 (手指往右移) -> 上一天 (邏輯同左箭頭按鈕)
                             updateDate(offset: -1)
                         } else if value.translation.width < -threshold {
-                            // 向左滑 (手指往左移) -> 下一天 (邏輯同右箭頭按鈕)
                             updateDate(offset: 1)
                         }
                     }
@@ -311,16 +319,72 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
 }
 
 // Helper View to simulate a destination page without creating a new file
+@MainActor
 struct ButtonDestinationView: View {
     let buttonCase: HomePageButtonCase
     let onDismiss: () -> Void // Callback closure added
     
+    // 從環境中抓取全域的 context
+    @Environment(\.modelContext) private var modelContext
+    
+    @Environment(AppState.self) private var appState
+
     // State specific to Button 1's inputs
     @State private var selectedTime = Date()
+    @State private var note: String = "" // 新增：備註狀態
     
     // State specific to Button 2's inputs
     @State private var textInput: String = ""
     @State private var sliderValue: Double = 50.0
+
+    private func _ToAppDate(time: Date) -> Date? {
+        let calendar = Calendar.current
+        
+        // 1. 從目標日期中提取「年、月、日」
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: appState.currentDate)
+        
+        // 2. 從時間資料中提取「時、分」
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
+        
+        // 3. 合併成一個新的 Components
+        var combinedComponents = DateComponents()
+        combinedComponents.year = dateComponents.year
+        combinedComponents.month = dateComponents.month
+        combinedComponents.day = dateComponents.day
+        combinedComponents.hour = timeComponents.hour
+        combinedComponents.minute = timeComponents.minute
+        combinedComponents.timeZone = .current // 確保時區一致
+        
+        if let date = Calendar.current.date(from: combinedComponents) {
+            // 2. 直接格式化顯示
+            let displayString = date.formatted(date: .numeric, time: .standard)
+            print(displayString) // 輸出範例：2024/2/10 18:30:00
+        }
+        
+        // 4. 產生最終的 Date 物件
+        return calendar.date(from: combinedComponents)
+    }
+
+    // 處理 Button 1 的確認事件
+    private func saveButton1Action() {
+        // 恢復使用 combine 並安全解包，確保資料寫入時使用的是「當前日期」+「選擇的時間」
+        let timestamp = _ToAppDate(time: selectedTime) ?? selectedTime
+
+        let newActivity = WakeupActivity(timestamp: timestamp, note: note)
+        modelContext.insert(newActivity)
+        do {
+            try modelContext.save()
+            
+            // 驗證是否存入
+            let descriptor = FetchDescriptor<WakeupActivity>()
+            let allActivities = try modelContext.fetch(descriptor)
+            print("目前資料庫總數: \(allActivities.count)") // 先看數量對不對
+            
+        } catch {
+            print("儲存失敗: \(error.localizedDescription)")
+        }
+        
+    }
 
     var body: some View {
         VStack {
@@ -333,6 +397,11 @@ struct ButtonDestinationView: View {
                     DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
                         .datePickerStyle(.wheel)
                         .labelsHidden()
+                    
+                    // 新增：備註輸入框
+                    TextField("輸入備註...", text: $note)
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal)
                 }
                 .padding()
 
@@ -371,8 +440,7 @@ struct ButtonDestinationView: View {
                 // Conditional logic for Confirm button visibility/action
                 if buttonCase == .button1 {
                     Button("Confirm") {
-                        // Logic to handle confirmation (e.g., save the date)
-                        print("Button 1 Confirmed Time: \(selectedTime.formatted(date: .omitted, time: .shortened))")
+                        saveButton1Action() // 呼叫新增的儲存函式
                         onDismiss()
                     }
                     .buttonStyle(.borderedProminent)
@@ -393,24 +461,19 @@ struct ButtonDestinationView: View {
 
 struct HomePageView: View {
     
+    // 初始化全域狀態
+    @State private var appState = AppState()
+    
     // State to track which button case's sheet should be shown
     @State private var activeSheet: HomePageButtonCase? = nil 
     
-    // 日期狀態
-    @State private var selectedDate: Date
-    
-    init() {
-        // 初始化：設置為今天的 5 AM
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        _selectedDate = State(initialValue: calendar.date(bySettingHour: 0, minute: 0, second: 0, of: today)!)
-    }
+    // 移除了 selectedDate 和 init，改用 AppState
 
     var body: some View {
         VStack(spacing: 0) {
             
             // 1. 引入新的時間軸組件 (佔據頂部區域)
-            DailyTimelineView(currentDate: $selectedDate)
+            DailyTimelineView() // 不再需要傳遞參數
                 .frame(height: 600) 
                 .background(Color(UIColor.white))
 
@@ -443,7 +506,9 @@ struct HomePageView: View {
             .frame(height: 100) 
             
         }
-        .navigationTitle("Home") 
+        .navigationTitle("Home")
+        // 將 appState 注入環境中，主視圖可以使用
+        .environment(appState)
         
         // Present the selected view as a sheet (Bottom-up pop-up effect)
         .sheet(item: $activeSheet) { caseItem in
@@ -453,8 +518,11 @@ struct HomePageView: View {
                     activeSheet = nil
                 }
             )
+            // 關鍵修正：必須在 Sheet 內部再次注入環境變數，否則彈出視窗會找不到 AppState 並崩潰
+            .environment(appState)
             .presentationDetents([.medium, .large]) 
             .presentationDragIndicator(.visible)
         }
     }
 }
+

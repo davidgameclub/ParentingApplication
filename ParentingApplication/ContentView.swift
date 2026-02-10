@@ -167,7 +167,7 @@ struct GenderView: View {
     
     @State private var selectedGender: String = "Select"
     @State private var navigateToBirth = false
-    let genders = ["Select", "Male", "Female", "Other", "Prefer not to say"]
+    let genders = ["Male", "Female"]
     
     var body: some View {
         VStack {
