@@ -266,9 +266,8 @@ struct DailyTimelineView: View {
 // 按鈕列舉
 enum HomePageButtonCase: Int, Identifiable, CaseIterable{
     case wakeup = 1
-    case feeding = 2
+    case sleep = 2 // 修改：原本是 feeding，現在改為 sleep
     case diaper = 3
-    case sleep = 4
     case growth = 5
     case setting = 6
     
@@ -277,9 +276,8 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
     var title: String {
         switch self {
         case .wakeup: return "起床"
-        case .feeding: return "餵奶"
+        case .sleep: return "睡覺" // 修改標題
         case .diaper: return "尿布"
-        case .sleep: return "睡眠"
         case .growth: return "成長"
         case .setting: return "設定"
         }
@@ -288,9 +286,8 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
     var iconName: String {
         switch self {
         case .wakeup: return "sun.max.fill"
-        case .feeding: return "mouth.fill"
+        case .sleep: return "moon.zzz.fill" // 修改圖示
         case .diaper: return "water.waves"
-        case .sleep: return "moon.stars.fill"
         case .growth: return "chart.line.uptrend.xyaxis"
         case .setting: return "gearshape.fill"
         }
@@ -299,9 +296,8 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
     var color: Color {
         switch self {
         case .wakeup: return .orange
-        case .feeding: return .blue
+        case .sleep: return .indigo // 修改顏色以符合睡覺氛圍
         case .diaper: return .green
-        case .sleep: return .indigo
         case .growth: return .pink
         case .setting: return .gray
         }
@@ -319,8 +315,6 @@ struct ButtonDestinationView: View {
 
     @State private var selectedTime = Date()
     @State private var note: String = ""
-    @State private var textInput: String = ""
-    @State private var sliderValue: Double = 50.0
 
     private func _ToAppDate(time: Date) -> Date? {
         let calendar = Calendar.current
@@ -336,38 +330,39 @@ struct ButtonDestinationView: View {
         return calendar.date(from: combinedComponents)
     }
 
-    private func saveButton1Action() {
+    private func saveWakeupAction() {
         let timestamp = _ToAppDate(time: selectedTime) ?? selectedTime
         let newActivity = WakeupActivity(timestamp: timestamp, note: note)
         modelContext.insert(newActivity)
         try? modelContext.save()
     }
 
+    // 新增：睡覺活動的儲存函式
+    private func saveSleepAction() {
+        let timestamp = _ToAppDate(time: selectedTime) ?? selectedTime
+        let newActivity = SleepActivity(timestamp: timestamp, note: note)
+        modelContext.insert(newActivity)
+        try? modelContext.save()
+    }
+
     var body: some View {
         VStack {
-            if buttonCase == .wakeup {
+            // 起床與睡覺共用相同的輸入 UI
+            if buttonCase == .wakeup || buttonCase == .sleep {
                 VStack(spacing: 20) {
-                    Text("起床時間").font(.headline).foregroundColor(.white)
+                    Text(buttonCase == .wakeup ? "起床時間" : "睡覺時間")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
                     DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
                         .datePickerStyle(.wheel)
                         .labelsHidden()
+                    
                     TextField("輸入備註...", text: $note)
                         .textFieldStyle(.roundedBorder)
                         .padding(.horizontal)
                 }
                 .padding()
-            } else if buttonCase == .feeding {
-                VStack(spacing: 30) {
-                    TextField("Enter value", text: $textInput)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal)
-                    VStack {
-                        Text("Slider Value: \(sliderValue, specifier: "%.1f")").foregroundColor(.white)
-                        Slider(value: $sliderValue, in: 0...100)
-                    }
-                    .padding(.horizontal)
-                }
-                .padding(.top, 40)
             } else {
                 Text("This is the detail page for \(buttonCase.title)")
                     .font(.title)
@@ -383,7 +378,11 @@ struct ButtonDestinationView: View {
                     .tint(.gray)
 
                 Button("Confirm") {
-                    if buttonCase == .wakeup { saveButton1Action() }
+                    if buttonCase == .wakeup {
+                        saveWakeupAction()
+                    } else if buttonCase == .sleep {
+                        saveSleepAction() // 呼叫睡覺儲存邏輯
+                    }
                     onDismiss()
                 }
                 .buttonStyle(.borderedProminent)
