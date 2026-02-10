@@ -74,37 +74,41 @@ struct TimelineEvent: Identifiable {
     var description: String
 }
 
-
-// 2. 輔助視圖：單個小時的時間軸行
+// 2. 輔助視圖：單個小時的時間軸行 (僅包含格線與文字)
 struct TimelineRowView: View {
     let event: TimelineEvent
     
     var body: some View {
-        HStack(alignment: .top) {
-            // 時間標籤 (左側)
+        HStack(alignment: .top, spacing: 0) {
+            // A. 時間標籤
             Text("\(event.hour):00")
-                .font(.caption)
-                .frame(width: 50, alignment: .trailing)
-                .foregroundColor(.gray) // 改為淺灰色
+                .font(.caption2)
+                .frame(width: 45, alignment: .trailing)
+                .foregroundColor(.gray)
                 .padding(.trailing, 5)
+                .offset(y: -7)
             
-            // 時間線和活動區 (右側)
-            VStack(alignment: .leading) {
+            // B. 右側內容區與橫線
+            VStack(alignment: .leading, spacing: 0) {
                 Rectangle()
-                    .fill(Color.white.opacity(0.15)) // 線條改為白色透明
+                    .fill(Color.white.opacity(0.15))
                     .frame(height: 1)
                 
-                // 模擬活動內容區塊
-                Text(event.description)
-                    .font(.caption)
-                    .foregroundColor(.white) // 文字改為白色
-                    .padding(4)
-                    .background(Color.green.opacity(0.3)) // 增加背景對比度
-                    .cornerRadius(4)
-                    .opacity(event.hour % 3 == 0 ? 1.0 : 0.0)
+                Spacer()
+                
+                if !event.description.isEmpty {
+                    Text(event.description)
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(Color.green.opacity(0.3))
+                        .cornerRadius(4)
+                        .padding(.leading, 10)
+                }
+                
+                Spacer()
             }
         }
-        .padding(.vertical, 5)
         .frame(height: 50)
     }
 }
@@ -120,14 +124,10 @@ struct TimelineDatePickerSheet: View {
             HStack {
                 Button("取消") { isPresented = false }
                     .foregroundColor(.red)
-                
                 Spacer()
-                
                 Button("今天") { tempDate = Date() }
                     .foregroundColor(.blue)
-                
                 Spacer()
-                
                 Button("確認") {
                     appState.currentDate = tempDate
                     isPresented = false
@@ -144,11 +144,9 @@ struct TimelineDatePickerSheet: View {
                 .padding()
                 .layoutPriority(1)
         }
-        .background(appDeepGray.ignoresSafeArea()) // 設定深灰色背景
-        .preferredColorScheme(.dark) // 強制深色模式，使選擇器變為白色文字
-        .onAppear {
-            tempDate = appState.currentDate
-        }
+        .background(appDeepGray.ignoresSafeArea()) 
+        .preferredColorScheme(.dark) 
+        .onAppear { tempDate = appState.currentDate }
     }
 }
 
@@ -158,13 +156,74 @@ struct DailyTimelineView: View {
     @State private var showDatePicker = false
     @State private var slideEdge: Edge = .trailing
     
+    @Query private var wakeups: [WakeupActivity]
+    @Query private var sleeps: [SleepActivity]
+    
+    private let hourHeight: CGFloat = 50.0
+    private let timeLabelWidth: CGFloat = 50.0
+    
+    // 計算特定時間在 y 軸上的偏移量
+    private func yOffset(for date: Date) -> CGFloat {
+        let calendar = Calendar.current
+        let hour = CGFloat(calendar.component(.hour, from: date))
+        let minute = CGFloat(calendar.component(.minute, from: date))
+        return (hour * hourHeight) + (minute / 60.0 * hourHeight)
+    }
+    
     private var eventsForCurrentDate: [TimelineEvent] {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         return (0..<24).map { hour in
             let specificDate = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: startOfDay)!
-            return TimelineEvent(hour: hour, date: specificDate, description: "Activity Log for \(hour):00")
+            return TimelineEvent(hour: hour, date: specificDate, description: "")
         }
+    }
+
+    // 計算當天的活動狀態區塊
+    private var statusBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: appState.currentDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        // 取得當天的活動並排序
+        let todayWakeups = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }
+        let todaySleeps = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }
+        
+        let sorted = (todayWakeups.map { (t: $0.timestamp, s: "wakeup") } +
+                      todaySleeps.map { (t: $0.timestamp, s: "sleep") })
+                     .sorted { $0.t < $1.t }
+        
+        if sorted.isEmpty { return [] }
+        
+        var blocks: [(start: CGFloat, end: CGFloat, color: Color)] = []
+        
+        // 1. 處理當天開始到第一個活動之間的區段
+        if let first = sorted.first {
+            let startY = 0.0
+            let endY = yOffset(for: first.t)
+            // 如果第一個活動是起床，代表之前是在睡覺
+            let color = (first.s == "wakeup") ? Color.white : Color.yellow
+            blocks.append((startY, endY, color))
+        }
+        
+        // 2. 處理活動之間的區段
+        for i in 0..<sorted.count {
+            let current = sorted[i]
+            let startY = yOffset(for: current.t)
+            let endY: CGFloat
+            
+            if i < sorted.count - 1 {
+                endY = yOffset(for: sorted[i+1].t)
+            } else {
+                // 最後一個活動到當天結束
+                endY = 24 * hourHeight
+            }
+            
+            let color = (current.s == "wakeup") ? Color.yellow : Color.white
+            blocks.append((startY, endY, color))
+        }
+        
+        return blocks
     }
     
     private func updateDate(offset: Int) {
@@ -179,10 +238,9 @@ struct DailyTimelineView: View {
     
     private func scrollToCurrentTime(proxy: ScrollViewProxy) {
         let calendar = Calendar.current
-        let initialTime = 5
-        //let targetHour = calendar.component(.hour, from: Date())
-        if let initialTime = calendar.date(bySettingHour: initialTime, minute: 0, second: 0, of: appState.currentDate) {
-            proxy.scrollTo(initialTime, anchor: .top)
+        let initialTime = calendar.component(.hour, from: Date())
+        if let targetDate = calendar.date(bySettingHour: max(0, initialTime - 2), minute: 0, second: 0, of: appState.currentDate) {
+            proxy.scrollTo(targetDate, anchor: .top)
         }
     }
     
@@ -198,32 +256,20 @@ struct DailyTimelineView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            // 日期選擇與切換
             HStack {
-                Button(action: { updateDate(offset: -1) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                }
+                Button(action: { updateDate(offset: -1) }) { Image(systemName: "chevron.left").font(.title2) }
                 .padding(.leading)
                 
                 Button(action: { showDatePicker = true }) {
-                    Text(formattedDateString)
-                        .font(.title2)
-                        .bold()
-                        .foregroundColor(.blue)
-                        .frame(maxWidth: .infinity)
+                    Text(formattedDateString).font(.title2).bold().foregroundColor(.blue).frame(maxWidth: .infinity)
                 }
                 .sheet(isPresented: $showDatePicker) {
                     TimelineDatePickerSheet(isPresented: $showDatePicker)
                         .presentationDetents([.height(350), .medium])
-                        .presentationDragIndicator(.visible)
                 }
                 
-                Button(action: { updateDate(offset: 1) }) {
-                    Image(systemName: "chevron.right")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                }
+                Button(action: { updateDate(offset: 1) }) { Image(systemName: "chevron.right").font(.title2) }
                 .padding(.trailing)
             }
             .padding(.vertical, 10)
@@ -231,75 +277,56 @@ struct DailyTimelineView: View {
             ZStack {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(eventsForCurrentDate) { event in
-                                TimelineRowView(event: event)
-                                    .id(event.date)
+                        ZStack(alignment: .topLeading) {
+                            // 第一層：背景色塊 (精確對齊到分鐘)
+                            let columnWidth = UIScreen.main.bounds.width / 4 - 10
+                            ForEach(0..<statusBlocks.count, id: \.self) { index in
+                                let block = statusBlocks[index]
+                                Rectangle()
+                                    .fill(block.color.opacity(0.25))
+                                    .frame(width: columnWidth, height: block.end - block.start)
+                                    .offset(x: timeLabelWidth, y: block.start)
+                            }
+
+                            // 第二層：時間軸格線與活動 (LazyVStack)
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(eventsForCurrentDate) { event in
+                                    TimelineRowView(event: event)
+                                        .id(event.date)
+                                }
+                            }
+                            
+                            // 第三層：NOW 指示線
+                            if Calendar.current.isDate(appState.currentDate, inSameDayAs: Date()) {
+                                HStack(spacing: 0) {
+                                    ZStack(alignment: .trailing) {
+                                        HStack(spacing: 2) {
+                                            Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.red)
+                                            Circle().fill(.red).frame(width: 6, height: 6)
+                                        }
+                                        .padding(.trailing, 2)
+                                    }
+                                    .frame(width: timeLabelWidth, alignment: .trailing)
+                                    
+                                    Rectangle().fill(Color.red.opacity(0.6)).frame(height: 2)
+                                }
+                                .offset(y: yOffset(for: Date()))
                             }
                         }
                     }
                     .background(Color.clear)
-                    .onAppear {
-                        scrollToCurrentTime(proxy: proxy)
-                    }
+                    .onAppear { scrollToCurrentTime(proxy: proxy) }
                 }
                 .id(appState.currentDate)
-                .transition(.asymmetric(
-                    insertion: .move(edge: slideEdge),
-                    removal: .move(edge: slideEdge == .leading ? .trailing : .leading)
-                ))
+                .transition(.asymmetric(insertion: .move(edge: slideEdge), removal: .move(edge: slideEdge == .leading ? .trailing : .leading)))
             }
             .clipped()
             .gesture(
-                DragGesture()
-                    .onEnded { value in
-                        let threshold: CGFloat = 50 
-                        if value.translation.width > threshold { updateDate(offset: -1) }
-                        else if value.translation.width < -threshold { updateDate(offset: 1) }
-                    }
+                DragGesture().onEnded { value in
+                    if value.translation.width > 50 { updateDate(offset: -1) }
+                    else if value.translation.width < -50 { updateDate(offset: 1) }
+                }
             )
-        }
-    }
-}
-
-
-// 按鈕列舉
-enum HomePageButtonCase: Int, Identifiable, CaseIterable{
-    case wakeup = 1
-    case sleep = 2 // 修改：原本是 feeding，現在改為 sleep
-    case diaper = 3
-    case growth = 5
-    case setting = 6
-    
-    var id: Int { self.rawValue }
-    
-    var title: String {
-        switch self {
-        case .wakeup: return "起床"
-        case .sleep: return "睡覺" // 修改標題
-        case .diaper: return "尿布"
-        case .growth: return "成長"
-        case .setting: return "設定"
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .wakeup: return "sun.max.fill"
-        case .sleep: return "moon.zzz.fill" // 修改圖示
-        case .diaper: return "water.waves"
-        case .growth: return "chart.line.uptrend.xyaxis"
-        case .setting: return "gearshape.fill"
-        }
-    }
-    
-    var color: Color {
-        switch self {
-        case .wakeup: return .orange
-        case .sleep: return .indigo // 修改顏色以符合睡覺氛圍
-        case .diaper: return .green
-        case .growth: return .pink
-        case .setting: return .gray
         }
     }
 }
@@ -316,84 +343,90 @@ struct ButtonDestinationView: View {
     @State private var selectedTime = Date()
     @State private var note: String = ""
 
-    private func _ToAppDate(time: Date) -> Date? {
+    private func _ToAppDate(time: Date) -> Date {
         let calendar = Calendar.current
         let dateComponents = calendar.dateComponents([.year, .month, .day], from: appState.currentDate)
         let timeComponents = calendar.dateComponents([.hour, .minute], from: time)
-        var combinedComponents = DateComponents()
-        combinedComponents.year = dateComponents.year
-        combinedComponents.month = dateComponents.month
-        combinedComponents.day = dateComponents.day
-        combinedComponents.hour = timeComponents.hour
-        combinedComponents.minute = timeComponents.minute
-        combinedComponents.timeZone = .current
-        return calendar.date(from: combinedComponents)
-    }
-
-    private func saveWakeupAction() {
-        let timestamp = _ToAppDate(time: selectedTime) ?? selectedTime
-        let newActivity = WakeupActivity(timestamp: timestamp, note: note)
-        modelContext.insert(newActivity)
-        try? modelContext.save()
-    }
-
-    // 新增：睡覺活動的儲存函式
-    private func saveSleepAction() {
-        let timestamp = _ToAppDate(time: selectedTime) ?? selectedTime
-        let newActivity = SleepActivity(timestamp: timestamp, note: note)
-        modelContext.insert(newActivity)
-        try? modelContext.save()
+        var combined = DateComponents()
+        combined.year = dateComponents.year
+        combined.month = dateComponents.month
+        combined.day = dateComponents.day
+        combined.hour = timeComponents.hour
+        combined.minute = timeComponents.minute
+        return calendar.date(from: combined) ?? Date()
     }
 
     var body: some View {
         VStack {
-            // 起床與睡覺共用相同的輸入 UI
             if buttonCase == .wakeup || buttonCase == .sleep {
                 VStack(spacing: 20) {
-                    Text(buttonCase == .wakeup ? "起床時間" : "睡覺時間")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    
+                    Text(buttonCase == .wakeup ? "起床時間" : "睡覺時間").font(.headline)
                     DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                    
-                    TextField("輸入備註...", text: $note)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal)
+                        .datePickerStyle(.wheel).labelsHidden()
+                    TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
                 }
                 .padding()
             } else {
-                Text("This is the detail page for \(buttonCase.title)")
-                    .font(.title)
-                    .foregroundColor(.white)
-                    .padding()
+                Text("Detail for \(buttonCase.title)").padding()
             }
             
             Spacer()
 
             HStack {
-                Button("Cancel") { onDismiss() }
-                    .buttonStyle(.bordered)
-                    .tint(.gray)
-
+                Button("Cancel") { onDismiss() }.buttonStyle(.bordered).tint(.gray)
                 Button("Confirm") {
+                    let finalDate = _ToAppDate(time: selectedTime)
                     if buttonCase == .wakeup {
-                        saveWakeupAction()
+                        modelContext.insert(WakeupActivity(timestamp: finalDate, note: note))
                     } else if buttonCase == .sleep {
-                        saveSleepAction() // 呼叫睡覺儲存邏輯
+                        modelContext.insert(SleepActivity(timestamp: finalDate, note: note))
                     }
+                    // 執行 save 會自動觸發 @Query 更新
+                    try? modelContext.save()
                     onDismiss()
                 }
                 .buttonStyle(.borderedProminent)
             }
             .padding()
         }
-        .background(appDeepGray.ignoresSafeArea()) // 設定深灰色背景
-        .preferredColorScheme(.dark) // 確保輸入元件變為深色模式
+        .background(appDeepGray.ignoresSafeArea()) 
+        .preferredColorScheme(.dark) 
     }
 }
 
+// 剩餘 HomePageButtonCase 與 HomePageView 保持一致...
+
+enum HomePageButtonCase: Int, Identifiable, CaseIterable{
+    case wakeup = 1, sleep = 2, diaper = 3, growth = 5, setting = 6
+    var id: Int { self.rawValue }
+    var title: String {
+        switch self {
+        case .wakeup: return "起床"
+        case .sleep: return "睡覺"
+        case .diaper: return "尿布"
+        case .growth: return "成長"
+        case .setting: return "設定"
+        }
+    }
+    var iconName: String {
+        switch self {
+        case .wakeup: return "sun.max.fill"
+        case .sleep: return "moon.zzz.fill" 
+        case .diaper: return "water.waves"
+        case .growth: return "chart.line.uptrend.xyaxis"
+        case .setting: return "gearshape.fill"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .wakeup: return .orange
+        case .sleep: return .indigo
+        case .diaper: return .green
+        case .growth: return .pink
+        case .setting: return .gray
+        }
+    }
+}
 
 struct HomePageView: View {
     @State private var appState = AppState()
@@ -412,19 +445,12 @@ struct HomePageView: View {
                         VStack(spacing: 8) {
                             Button(action: { activeSheet = caseItem }) {
                                 ZStack {
-                                    Circle()
-                                        .fill(caseItem.color)
-                                        .frame(width: 60, height: 60)
-                                    Image(systemName: caseItem.iconName)
-                                        .font(.title2)
-                                        .foregroundColor(.white)
+                                    Circle().fill(caseItem.color).frame(width: 60, height: 60)
+                                    Image(systemName: caseItem.iconName).font(.title2).foregroundColor(.white)
                                 }
                             }
                             .buttonStyle(.plain)
-                            
-                            Text(caseItem.title)
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                            Text(caseItem.title).font(.caption).foregroundColor(.gray)
                         }
                     }
                 }
@@ -433,14 +459,11 @@ struct HomePageView: View {
             .frame(height: 120) 
         }
         .navigationTitle("Home")
-        .background(appDeepGray.ignoresSafeArea()) // 設定深灰色背景
-        .preferredColorScheme(.dark) // 強制全域深色樣式
+        .background(appDeepGray.ignoresSafeArea()) 
+        .preferredColorScheme(.dark) 
         .environment(appState)
         .sheet(item: $activeSheet) { caseItem in
-            ButtonDestinationView(
-                buttonCase: caseItem,
-                onDismiss: { activeSheet = nil }
-            )
+            ButtonDestinationView(buttonCase: caseItem, onDismiss: { activeSheet = nil })
             .environment(appState)
             .presentationDetents([.medium, .large]) 
             .presentationDragIndicator(.visible)
