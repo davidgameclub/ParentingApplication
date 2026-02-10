@@ -394,8 +394,6 @@ struct ButtonDestinationView: View {
     }
 }
 
-// 剩餘 HomePageButtonCase 與 HomePageView 保持一致...
-
 enum HomePageButtonCase: Int, Identifiable, CaseIterable{
     case wakeup = 1, sleep = 2, diaper = 3, growth = 5, setting = 6
     var id: Int { self.rawValue }
@@ -445,8 +443,23 @@ struct HomePageView: View {
                         VStack(spacing: 8) {
                             Button(action: { activeSheet = caseItem }) {
                                 ZStack {
-                                    Circle().fill(caseItem.color).frame(width: 60, height: 60)
-                                    Image(systemName: caseItem.iconName).font(.title2).foregroundColor(.white)
+                                    // 1. 底層懸空光暈：壓扁成橢圓形並向下偏移，營造投影感
+                                    Ellipse()
+                                        .fill(caseItem.color)
+                                        .frame(width: 40, height: 12)
+                                        .blur(radius: 8)
+                                        .opacity(0.4)
+                                        .offset(y: 25) // 位於 60x60 圓形下方
+                                    
+                                    // 2. 按鈕本體：純色圓形，保持邊緣銳利
+                                    Circle()
+                                        .fill(caseItem.color)
+                                        .frame(width: 60, height: 60)
+                                    
+                                    // 3. 圖示
+                                    Image(systemName: caseItem.iconName)
+                                        .font(.title2)
+                                        .foregroundColor(.white)
                                 }
                             }
                             .buttonStyle(.plain)
@@ -455,8 +468,9 @@ struct HomePageView: View {
                     }
                 }
                 .padding(.horizontal, 20) 
+                .padding(.bottom, 20) // 給予光暈顯示空間
             }
-            .frame(height: 120) 
+            .frame(height: 140) 
         }
         .navigationTitle("Home")
         .background(appDeepGray.ignoresSafeArea()) 
