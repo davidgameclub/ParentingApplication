@@ -32,7 +32,8 @@ struct ParentingApplication: App {
         // Initialize the SwiftData container for our model
         .modelContainer(for: [
             UserProfile.self,
-            WakeupActivity.self
+            WakeupActivity.self,
+            SleepActivity.self
         ])
     }
 }
