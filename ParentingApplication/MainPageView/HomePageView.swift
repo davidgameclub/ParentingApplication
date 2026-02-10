@@ -185,7 +185,6 @@ struct DailyTimelineView: View {
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         
-        // 取得當天的活動並排序
         let todayWakeups = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }
         let todaySleeps = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }
         
@@ -197,33 +196,39 @@ struct DailyTimelineView: View {
         
         var blocks: [(start: CGFloat, end: CGFloat, color: Color)] = []
         
-        // 1. 處理當天開始到第一個活動之間的區段
         if let first = sorted.first {
             let startY = 0.0
             let endY = yOffset(for: first.t)
-            // 如果第一個活動是起床，代表之前是在睡覺
             let color = (first.s == "wakeup") ? Color.white : Color.yellow
             blocks.append((startY, endY, color))
         }
         
-        // 2. 處理活動之間的區段
         for i in 0..<sorted.count {
             let current = sorted[i]
             let startY = yOffset(for: current.t)
             let endY: CGFloat
-            
             if i < sorted.count - 1 {
                 endY = yOffset(for: sorted[i+1].t)
             } else {
-                // 最後一個活動到當天結束
                 endY = 24 * hourHeight
             }
-            
             let color = (current.s == "wakeup") ? Color.yellow : Color.white
             blocks.append((startY, endY, color))
         }
         
         return blocks
+    }
+
+    // 取得當天具體的活動標記
+    private var todayActivities: [(timestamp: Date, type: String)] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: appState.currentDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+
+        let w = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ($0.timestamp, "wakeup") }
+        let s = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ($0.timestamp, "sleep") }
+
+        return (w + s).sorted { $0.0 < $1.0 }
     }
     
     private func updateDate(offset: Int) {
@@ -256,7 +261,6 @@ struct DailyTimelineView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // 日期選擇與切換
             HStack {
                 Button(action: { updateDate(offset: -1) }) { Image(systemName: "chevron.left").font(.title2) }
                 .padding(.leading)
@@ -278,8 +282,9 @@ struct DailyTimelineView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         ZStack(alignment: .topLeading) {
-                            // 第一層：背景色塊 (精確對齊到分鐘)
                             let columnWidth = UIScreen.main.bounds.width / 4 - 10
+                            
+                            // 第一層：背景色塊
                             ForEach(0..<statusBlocks.count, id: \.self) { index in
                                 let block = statusBlocks[index]
                                 Rectangle()
@@ -288,7 +293,23 @@ struct DailyTimelineView: View {
                                     .offset(x: timeLabelWidth, y: block.start)
                             }
 
-                            // 第二層：時間軸格線與活動 (LazyVStack)
+                            // 第二層：起床/睡覺方形按鈕標籤 (位於區塊中間)
+                            ForEach(0..<todayActivities.count, id: \.self) { index in
+                                let activity = todayActivities[index]
+                                let isWakeup = activity.type == "wakeup"
+                                
+                                Text(isWakeup ? "起床" : "睡覺")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(isWakeup ? Color.orange : Color.indigo)
+                                    .cornerRadius(4)
+                                    // 水平置中於 1/4 區塊，垂直對齊分鐘
+                                    .offset(x: timeLabelWidth + (columnWidth / 2) - 15, y: yOffset(for: activity.timestamp) - 10)
+                            }
+
+                            // 第三層：時間軸格線與活動
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 ForEach(eventsForCurrentDate) { event in
                                     TimelineRowView(event: event)
@@ -296,7 +317,7 @@ struct DailyTimelineView: View {
                                 }
                             }
                             
-                            // 第三層：NOW 指示線
+                            // 第四層：NOW 指示線
                             if Calendar.current.isDate(appState.currentDate, inSameDayAs: Date()) {
                                 HStack(spacing: 0) {
                                     ZStack(alignment: .trailing) {
@@ -381,7 +402,6 @@ struct ButtonDestinationView: View {
                     } else if buttonCase == .sleep {
                         modelContext.insert(SleepActivity(timestamp: finalDate, note: note))
                     }
-                    // 執行 save 會自動觸發 @Query 更新
                     try? modelContext.save()
                     onDismiss()
                 }
@@ -443,20 +463,17 @@ struct HomePageView: View {
                         VStack(spacing: 8) {
                             Button(action: { activeSheet = caseItem }) {
                                 ZStack {
-                                    // 1. 底層懸空光暈：壓扁成橢圓形並向下偏移，營造投影感
                                     Ellipse()
                                         .fill(caseItem.color)
                                         .frame(width: 40, height: 12)
                                         .blur(radius: 8)
                                         .opacity(0.4)
-                                        .offset(y: 25) // 位於 60x60 圓形下方
+                                        .offset(y: 25)
                                     
-                                    // 2. 按鈕本體：純色圓形，保持邊緣銳利
                                     Circle()
                                         .fill(caseItem.color)
                                         .frame(width: 60, height: 60)
                                     
-                                    // 3. 圖示
                                     Image(systemName: caseItem.iconName)
                                         .font(.title2)
                                         .foregroundColor(.white)
@@ -468,7 +485,7 @@ struct HomePageView: View {
                     }
                 }
                 .padding(.horizontal, 20) 
-                .padding(.bottom, 20) // 給予光暈顯示空間
+                .padding(.bottom, 20)
             }
             .frame(height: 140) 
         }
