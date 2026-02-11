@@ -529,7 +529,8 @@ struct DailyTimelineView: View {
             })
         }
         .sheet(item: $editingActivity) { item in
-            ActivityEditView(item: item) { editingActivity = nil }.presentationDetents([.medium])
+            ActivityEditView(item: item) { editingActivity = nil }
+                .presentationDetents([.medium])
         }
     }
 }
@@ -590,31 +591,64 @@ struct ActivityEditView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: 15) {
                 Text("編輯紀錄").font(.headline).padding(.top)
-                DatePicker("時間", selection: $selectedTime, displayedComponents: .hourAndMinute).datePickerStyle(.wheel).labelsHidden()
+                
+                DatePicker("時間", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(height: 120)
+                    .clipped()
+                
+                // 修改處：改為紅綠切換按鈕開關，與下指令時一致
                 if case .custom = item {
-                    Toggle("活動狀態：\(isStart ? "開始" : "結束")", isOn: $isStart).padding(.horizontal).padding(.vertical, 8).background(Color.white.opacity(0.05)).cornerRadius(8).padding(.horizontal)
+                    Toggle(isOn: $isStart) {
+                        Text(isStart ? "標記為：開始" : "標記為：結束").fontWeight(.bold)
+                    }
+                    .toggleStyle(.button)
+                    .tint(isStart ? .green : .red)
+                    .padding(.bottom, 5)
                 }
+                
                 if case .feeding = item {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 5) {
                         Text("餵奶量：\(volume) ml").font(.subheadline).bold()
                         Slider(value: Binding(get: { Double(volume) }, set: { volume = Int($0) }), in: 0...400, step: 5)
                     }.padding(.horizontal)
                 }
+                
                 if case .diaper = item {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 5) {
                         Text("尿布類型").font(.subheadline).bold().padding(.leading)
-                        Picker("Diaper Type", selection: $diaperType) { Text("濕").tag("濕"); Text("髒").tag("髒"); Text("混合").tag("混合") }.pickerStyle(.segmented).padding(.horizontal)
+                        Picker("Diaper Type", selection: $diaperType) {
+                            Text("濕").tag("濕")
+                            Text("髒").tag("髒")
+                            Text("混合").tag("混合")
+                        }.pickerStyle(.segmented).padding(.horizontal)
                     }
                 }
-                TextField("備註", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
-                Spacer()
-                Button(role: .destructive, action: deleteActivity) {
-                    HStack { Image(systemName: "trash"); Text("刪除此紀錄") }.frame(maxWidth: .infinity).padding().background(Color.red.opacity(0.1)).cornerRadius(10)
-                }.padding(.horizontal)
+
+                VStack(spacing: 8) {
+                    TextField("輸入備註...", text: $note)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Button(role: .destructive, action: deleteActivity) {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("刪除此紀錄")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                }
+                .padding(.horizontal)
+                
+                Color.clear.frame(height: 10)
             }
-            .padding(.bottom).background(appDeepGray.ignoresSafeArea()).preferredColorScheme(.dark)
+            .background(appDeepGray.ignoresSafeArea())
+            .preferredColorScheme(.dark)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { onDismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("儲存") { saveChanges() }.fontWeight(.bold) }
@@ -646,31 +680,51 @@ struct ButtonDestinationView: View {
     }
 
     var body: some View {
-        VStack {
-            VStack(spacing: 20) {
-                Text("新增\(buttonCase.title)").font(.headline)
-                DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute).datePickerStyle(.wheel).labelsHidden()
-                if buttonCase == .customActivity {
-                    Toggle(isOn: $isStart) { Text(isStart ? "標記為：開始" : "標記為：結束").fontWeight(.bold) }.toggleStyle(.button).tint(isStart ? .green : .red).padding(.bottom, 10)
+        VStack(spacing: 15) {
+            Text("新增\(buttonCase.title)").font(.headline).padding(.top)
+            
+            DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .frame(height: 120)
+                .clipped()
+            
+            if buttonCase == .customActivity {
+                Toggle(isOn: $isStart) {
+                    Text(isStart ? "標記為：開始" : "標記為：結束").fontWeight(.bold)
                 }
-                if buttonCase == .feeding {
-                    VStack(alignment: .leading) {
-                        Text("奶量：\(volume) ml").font(.headline).foregroundColor(.white)
-                        Slider(value: Binding(get: { Double(volume) }, set: { volume = Int($0) }), in: 0...400, step: 5).accentColor(.pink)
-                    }.padding(.horizontal)
-                }
-                if buttonCase == .diaper {
-                    VStack(alignment: .leading) {
-                        Text("類型").font(.headline).foregroundColor(.white).padding(.leading)
-                        Picker("Diaper Type", selection: $diaperType) { Text("濕").tag("濕"); Text("髒").tag("髒"); Text("混合").tag("混合") }.pickerStyle(.segmented).padding(.horizontal)
-                    }
-                }
-                TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
+                .toggleStyle(.button)
+                .tint(isStart ? .green : .red)
             }
-            .padding()
-            Spacer()
-            HStack {
-                Button("Cancel") { onDismiss() }.buttonStyle(.bordered).tint(.gray)
+            
+            if buttonCase == .feeding {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("奶量：\(volume) ml").font(.headline).foregroundColor(.white)
+                    Slider(value: Binding(get: { Double(volume) }, set: { volume = Int($0) }), in: 0...400, step: 5).accentColor(.pink)
+                }.padding(.horizontal)
+            }
+            
+            if buttonCase == .diaper {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("類型").font(.headline).foregroundColor(.white).padding(.leading)
+                    Picker("Diaper Type", selection: $diaperType) {
+                        Text("濕").tag("濕")
+                        Text("髒").tag("髒")
+                        Text("混合").tag("混合")
+                    }.pickerStyle(.segmented).padding(.horizontal)
+                }
+            }
+            
+            TextField("輸入備註...", text: $note)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+            
+            HStack(spacing: 15) {
+                Button("Cancel") { onDismiss() }
+                    .buttonStyle(.bordered)
+                    .tint(.gray)
+                    .frame(maxWidth: .infinity)
+                
                 Button("Confirm") {
                     let finalDate = _ToAppDate(time: selectedTime)
                     switch buttonCase {
@@ -681,10 +735,15 @@ struct ButtonDestinationView: View {
                     case .diaper: modelContext.insert(DiaperActivity(timestamp: finalDate, note: note, type: diaperType))
                     }
                     try? modelContext.save(); onDismiss()
-                }.buttonStyle(.borderedProminent)
-            }.padding()
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 20)
         }
-        .background(appDeepGray.ignoresSafeArea()).preferredColorScheme(.dark) 
+        .background(appDeepGray.ignoresSafeArea())
+        .preferredColorScheme(.dark) 
     }
 }
 
