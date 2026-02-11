@@ -16,6 +16,7 @@ struct ParentingApplication: App {
             SleepActivity.self,
             CustomActivity.self,
             FeedingBottleActivity.self,
+            DiaperActivity.self
         ])
 
         // 關鍵點：將 isStoredInMemoryOnly 設為 true
@@ -39,7 +40,8 @@ struct ParentingApplication: App {
             UserProfile.self,
             WakeupActivity.self,
             SleepActivity.self,
-            CustomActivity.self
+            CustomActivity.self,
+            DiaperActivity.self
         ])
     }
 }

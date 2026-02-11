@@ -31,12 +31,16 @@ enum ActivityItem: Identifiable {
     case wakeup(WakeupActivity)
     case sleep(SleepActivity)
     case custom(CustomActivity)
+    case feeding(FeedingBottleActivity)
+    case diaper(DiaperActivity)
     
     var id: PersistentIdentifier {
         switch self {
         case .wakeup(let a): return a.persistentModelID
         case .sleep(let a): return a.persistentModelID
         case .custom(let a): return a.persistentModelID
+        case .feeding(let a): return a.persistentModelID
+        case .diaper(let a): return a.persistentModelID
         }
     }
     
@@ -45,6 +49,8 @@ enum ActivityItem: Identifiable {
         case .wakeup(let a): return a.timestamp
         case .sleep(let a): return a.timestamp
         case .custom(let a): return a.timestamp
+        case .feeding(let a): return a.timestamp
+        case .diaper(let a): return a.timestamp
         }
     }
     
@@ -53,6 +59,8 @@ enum ActivityItem: Identifiable {
         case .wakeup(let a): return a.note
         case .sleep(let a): return a.note
         case .custom(let a): return a.note
+        case .feeding(let a): return a.note
+        case .diaper(let a): return a.note
         }
     }
     
@@ -61,6 +69,8 @@ enum ActivityItem: Identifiable {
         case .wakeup: return "起床"
         case .sleep: return "睡覺"
         case .custom(let a): return a.isStart ? "開始" : "結束"
+        case .feeding(let a): return "餵食 \(a.volume)ml"
+        case .diaper(let a): return "尿布(\(a.type))"
         }
     }
 }
@@ -113,6 +123,19 @@ class FeedingBottleActivity {
         self.timestamp = timestamp
         self.note = note
         self.volume = volume
+    }
+}
+
+@Model
+class DiaperActivity {
+    var timestamp: Date
+    var note: String
+    var type: String // "濕", "髒", "混合"
+
+    init(timestamp : Date, note : String, type : String) {
+        self.timestamp = timestamp
+        self.note = note
+        self.type = type
     }
 }
 
@@ -211,6 +234,8 @@ struct DailyTimelineView: View {
     @Query private var wakeups: [WakeupActivity]
     @Query private var sleeps: [SleepActivity]
     @Query private var customActivities: [CustomActivity]
+    @Query private var feedings: [FeedingBottleActivity]
+    @Query private var diapers: [DiaperActivity]
     
     // 用於開啟編輯視圖的狀態
     @State private var editingActivity: ActivityItem?
@@ -354,8 +379,10 @@ struct DailyTimelineView: View {
         let w = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.wakeup($0) }
         let s = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.sleep($0) }
         let c = customActivities.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.custom($0) }
+        let f = feedings.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.feeding($0) }
+        let d = diapers.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.diaper($0) }
 
-        return (w + s + c).sorted { $0.timestamp < $1.timestamp }
+        return (w + s + c + f + d).sorted { $0.timestamp < $1.timestamp }
     }
     
     private func updateDate(offset: Int) {
@@ -437,13 +464,24 @@ struct DailyTimelineView: View {
                                     case .wakeup: return Color.orange
                                     case .sleep: return Color.indigo
                                     case .custom: return Color.green
+                                    case .feeding: return Color.pink
+                                    case .diaper: return Color.green // 尿布使用綠色
                                     }
                                 }()
                                 
                                 // 計算標籤的 X 偏移量
-                                // 如果是 custom，則往右偏移到它的專屬區域 (放在 3/4 寬度的中央)
                                 let isCustom: Bool = { if case .custom = item { return true }; return false }()
-                                let labelX = isCustom ? (timeLabelWidth + columnWidth + (customBlockWidth / 2) - 15) : (timeLabelWidth + (columnWidth / 2) - 15)
+                                let isFeedingOrDiaper: Bool = { 
+                                    if case .feeding = item { return true }
+                                    if case .diaper = item { return true }
+                                    return false
+                                }()
+                                
+                                let labelX: CGFloat = {
+                                    if isCustom { return timeLabelWidth + columnWidth + (customBlockWidth / 2) - 15 }
+                                    if isFeedingOrDiaper { return timeLabelWidth + columnWidth + customBlockWidth + 10 }
+                                    return timeLabelWidth + (columnWidth / 2) - 15
+                                }()
                                 
                                 Button(action: {
                                     editingActivity = item
@@ -519,16 +557,24 @@ struct ActivityEditView: View {
     @State private var selectedTime: Date
     @State private var note: String
     @State private var isStart: Bool = true
+    @State private var volume: Int = 50 // 餵食專用
+    @State private var diaperType: String = "濕" // 尿布專用
     
     init(item: ActivityItem, onDismiss: @escaping () -> Void) {
         self.item = item
         self.onDismiss = onDismiss
-        // 初始化 State 為目前的資料內容
         _selectedTime = State(initialValue: item.timestamp)
         _note = State(initialValue: item.note)
         
-        if case .custom(let activity) = item {
+        switch item {
+        case .custom(let activity):
             _isStart = State(initialValue: activity.isStart)
+        case .feeding(let activity):
+            _volume = State(initialValue: activity.volume)
+        case .diaper(let activity):
+            _diaperType = State(initialValue: activity.type)
+        default:
+            break
         }
     }
     
@@ -556,6 +602,14 @@ struct ActivityEditView: View {
             activity.timestamp = finalDate
             activity.note = note
             activity.isStart = isStart
+        case .feeding(let activity):
+            activity.timestamp = finalDate
+            activity.note = note
+            activity.volume = volume
+        case .diaper(let activity):
+            activity.timestamp = finalDate
+            activity.note = note
+            activity.type = diaperType
         }
         
         try? modelContext.save()
@@ -564,12 +618,11 @@ struct ActivityEditView: View {
     
     private func deleteActivity() {
         switch item {
-        case .wakeup(let activity):
-            modelContext.delete(activity)
-        case .sleep(let activity):
-            modelContext.delete(activity)
-        case .custom(let activity):
-            modelContext.delete(activity)
+        case .wakeup(let activity): modelContext.delete(activity)
+        case .sleep(let activity): modelContext.delete(activity)
+        case .custom(let activity): modelContext.delete(activity)
+        case .feeding(let activity): modelContext.delete(activity)
+        case .diaper(let activity): modelContext.delete(activity)
         }
         try? modelContext.save()
         onDismiss()
@@ -591,6 +644,27 @@ struct ActivityEditView: View {
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(8)
                         .padding(.horizontal)
+                }
+                
+                if case .feeding = item {
+                    VStack(alignment: .leading) {
+                        Text("餵奶量：\(volume) ml").font(.subheadline).bold()
+                        Slider(value: Binding(get: { Double(volume) }, set: { volume = Int($0) }), in: 0...400, step: 5)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                if case .diaper = item {
+                    VStack(alignment: .leading) {
+                        Text("尿布類型").font(.subheadline).bold().padding(.leading)
+                        Picker("Diaper Type", selection: $diaperType) {
+                            Text("濕").tag("濕")
+                            Text("髒").tag("髒")
+                            Text("混合").tag("混合")
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    }
                 }
                 
                 TextField("備註", text: $note)
@@ -637,7 +711,9 @@ struct ButtonDestinationView: View {
 
     @State private var selectedTime = Date()
     @State private var note: String = ""
-    @State private var isStart: Bool = true // 專供給活動按鈕使用
+    @State private var isStart: Bool = true // 活動開關
+    @State private var volume: Int = 50 // 預設奶量
+    @State private var diaperType: String = "濕" // 預設尿布類型
 
     private func _ToAppDate(time: Date) -> Date {
         let calendar = Calendar.current
@@ -662,12 +738,31 @@ struct ButtonDestinationView: View {
                 
                 if buttonCase == .customActivity {
                     Toggle(isOn: $isStart) {
-                        Text(isStart ? "標記為：開始" : "標記為：結束")
-                            .fontWeight(.bold)
+                        Text(isStart ? "標記為：開始" : "標記為：結束").fontWeight(.bold)
                     }
-                    .toggleStyle(.button)
-                    .tint(isStart ? .green : .red)
-                    .padding(.bottom, 10)
+                    .toggleStyle(.button).tint(isStart ? .green : .red).padding(.bottom, 10)
+                }
+                
+                if buttonCase == .feeding {
+                    VStack(alignment: .leading) {
+                        Text("奶量：\(volume) ml").font(.headline).foregroundColor(.white)
+                        Slider(value: Binding(get: { Double(volume) }, set: { volume = Int($0) }), in: 0...400, step: 5)
+                            .accentColor(.pink)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                if buttonCase == .diaper {
+                    VStack(alignment: .leading) {
+                        Text("類型").font(.headline).foregroundColor(.white).padding(.leading)
+                        Picker("Diaper Type", selection: $diaperType) {
+                            Text("濕").tag("濕")
+                            Text("髒").tag("髒")
+                            Text("混合").tag("混合")
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    }
                 }
                 
                 TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
@@ -681,14 +776,11 @@ struct ButtonDestinationView: View {
                 Button("Confirm") {
                     let finalDate = _ToAppDate(time: selectedTime)
                     switch buttonCase {
-                    case .wakeup:
-                        modelContext.insert(WakeupActivity(timestamp: finalDate, note: note))
-                    case .sleep:
-                        modelContext.insert(SleepActivity(timestamp: finalDate, note: note))
-                    case .customActivity:
-                        modelContext.insert(CustomActivity(timestamp: finalDate, note: note, isStart: isStart))
-                    default:
-                        break
+                    case .wakeup: modelContext.insert(WakeupActivity(timestamp: finalDate, note: note))
+                    case .sleep: modelContext.insert(SleepActivity(timestamp: finalDate, note: note))
+                    case .customActivity: modelContext.insert(CustomActivity(timestamp: finalDate, note: note, isStart: isStart))
+                    case .feeding: modelContext.insert(FeedingBottleActivity(timestamp: finalDate, note: note, volume: volume))
+                    case .diaper: modelContext.insert(DiaperActivity(timestamp: finalDate, note: note, type: diaperType))
                     }
                     try? modelContext.save()
                     onDismiss()
@@ -703,15 +795,15 @@ struct ButtonDestinationView: View {
 }
 
 enum HomePageButtonCase: Int, Identifiable, CaseIterable{
-    case wakeup = 1, sleep = 2, customActivity = 3, growth = 5, setting = 6
+    case wakeup = 1, sleep = 2, customActivity = 3, feeding = 5, diaper = 6
     var id: Int { self.rawValue }
     var title: String {
         switch self {
         case .wakeup: return "起床"
         case .sleep: return "睡覺"
         case .customActivity: return "活動"
-        case .growth: return "成長"
-        case .setting: return "設定"
+        case .feeding: return "瓶餵"
+        case .diaper: return "尿布"
         }
     }
     var iconName: String {
@@ -719,8 +811,8 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
         case .wakeup: return "sun.max.fill"
         case .sleep: return "moon.zzz.fill" 
         case .customActivity: return "figure.run"
-        case .growth: return "chart.line.uptrend.xyaxis"
-        case .setting: return "gearshape.fill"
+        case .feeding: return "drop.fill"
+        case .diaper: return "water.waves"
         }
     }
     var color: Color {
@@ -728,8 +820,8 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
         case .wakeup: return .orange
         case .sleep: return .indigo
         case .customActivity: return .green
-        case .growth: return .pink
-        case .setting: return .gray
+        case .feeding: return .pink
+        case .diaper: return .green
         }
     }
 }
@@ -746,7 +838,7 @@ struct HomePageView: View {
             Spacer()
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 25) {
+                HStack(spacing: 15) {
                     ForEach(HomePageButtonCase.allCases, id: \.id) { caseItem in
                         VStack(spacing: 8) {
                             Button(action: { activeSheet = caseItem }) {
