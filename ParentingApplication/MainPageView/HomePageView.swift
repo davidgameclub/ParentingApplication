@@ -31,6 +31,7 @@ struct PositionedActivityItem: Identifiable {
     let id: PersistentIdentifier
     let item: ActivityItem
     let y: CGFloat
+    var elapsedString: String? = nil // 存儲過往時間字串
 }
 
 // 用於包裝不同活動的 Identifiable 類型
@@ -189,18 +190,20 @@ struct ActivityDetailCard: View {
             .dateTime
                 .hour(.twoDigits(amPM: .omitted))
                 .minute(.twoDigits)
-                .locale(Locale(identifier: "en_GB")) // 使用英國 Locale 強制 24 小時制
+                .locale(Locale(identifier: "en_GB")) 
         )
     }
     
     var body: some View {
         HStack(spacing: 0) {
+            // 圖示區
             ZStack {
                 Rectangle().fill(item.buttonCase.color)
                 Image(systemName: item.buttonCase.iconName).font(.system(size: 10)).foregroundColor(.white)
             }
             .frame(width: 24, height: 24)
             
+            // 內容區
             HStack(spacing: 8) {
                 Text(item.typeTitle).font(.system(size: 11, weight: .bold)).foregroundColor(.white)
                 if let attr = item.attributeValue {
@@ -208,7 +211,6 @@ struct ActivityDetailCard: View {
                 }
                 Spacer()
                 
-                // 顯示 24 小時制時間
                 Text(timeString)
                     .font(.system(size: 9))
                     .foregroundColor(.gray.opacity(0.8))
@@ -218,7 +220,8 @@ struct ActivityDetailCard: View {
             .background(Color.white.opacity(0.1))
         }
         .cornerRadius(4)
-        .frame(width: 150)
+        // 修改處：加入 alignment: .leading，確保內容貼齊左側
+        .frame(width: 150, alignment: .leading)
     }
 }
 
@@ -268,12 +271,34 @@ struct DailyTimelineView: View {
         return (hour * hourHeight) + (minute / 60.0 * hourHeight)
     }
 
+    // 計算時間差字串 (符合新格式)
+    private func getElapsedTimeString(since date: Date) -> String {
+        let diff = Int(Date().timeIntervalSince(date))
+        if diff < 0 { return "" } 
+        
+        let hours = diff / 3600
+        let minutes = (diff % 3600) / 60
+        
+        if hours == 0 {
+            return "\(max(1, minutes))分鐘前"
+        } else {
+            return "\(hours)h\(minutes)m前"
+        }
+    }
+
     // 計算並防止重疊的核心邏輯
     private var positionedActivityItems: [PositionedActivityItem] {
         let sortedItems = todayActivityItems
         var positioned: [PositionedActivityItem] = []
         
-        // 分別追蹤三欄的最後底部位置 (Status, Custom, Instruction)
+        let calendar = Calendar.current
+        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: Date())
+        
+        var latestIDsByType: [HomePageButtonCase: PersistentIdentifier] = [:]
+        for item in sortedItems {
+            latestIDsByType[item.buttonCase] = item.id
+        }
+        
         var lastStatusBottom: CGFloat = -100
         var lastCustomBottom: CGFloat = -100
         var lastInstructionBottom: CGFloat = -100
@@ -281,9 +306,8 @@ struct DailyTimelineView: View {
         for item in sortedItems {
             let idealY = yOffset(for: item.timestamp)
             let h = item.height
-            var finalY = idealY - (h / 2) // 預設以時間線為中心
+            var finalY = idealY - (h / 2)
             
-            // 判斷屬於哪一欄並檢查碰撞，若疊到則往後推移
             if case .custom = item {
                 if finalY < lastCustomBottom + 2 { finalY = lastCustomBottom + 2 }
                 lastCustomBottom = finalY + h
@@ -295,7 +319,13 @@ struct DailyTimelineView: View {
                 lastStatusBottom = finalY + h
             }
             
-            positioned.append(PositionedActivityItem(id: item.id, item: item, y: finalY))
+            var posItem = PositionedActivityItem(id: item.id, item: item, y: finalY)
+            
+            if isToday && latestIDsByType[item.buttonCase] == item.id && item.isDetailInstruction {
+                posItem.elapsedString = getElapsedTimeString(since: item.timestamp)
+            }
+            
+            positioned.append(posItem)
         }
         
         return positioned
@@ -313,7 +343,7 @@ struct DailyTimelineView: View {
     private var statusBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
         let calendar = Calendar.current
         let now = Date()
-        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: now)
+        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: Date())
         let nowY = yOffset(for: now)
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
@@ -344,7 +374,7 @@ struct DailyTimelineView: View {
     private var customActivityBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
         let calendar = Calendar.current
         let now = Date()
-        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: now)
+        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: Date())
         let nowY = yOffset(for: now)
         let startOfDay = calendar.startOfDay(for: appState.currentDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
@@ -421,7 +451,7 @@ struct DailyTimelineView: View {
                     ScrollView {
                         ZStack(alignment: .topLeading) {
                             let columnWidth = UIScreen.main.bounds.width / 4 - 10
-                            let customBlockWidth = columnWidth * 0.6 // 修改處：將 3/4 改為 3/5
+                            let customBlockWidth = columnWidth * 0.6
                             
                             // 第一層：背景區塊
                             ForEach(0..<statusBlocks.count, id: \.self) { index in
@@ -445,7 +475,16 @@ struct DailyTimelineView: View {
                                 
                                 Button(action: { editingActivity = item }) {
                                     if isInstruction {
-                                        ActivityDetailCard(item: item)
+                                        // 修改處：將過往時間移至 ActivityDetailCard 的右側 (HStack 排列)
+                                        HStack(alignment: .bottom, spacing: 4) {
+                                            ActivityDetailCard(item: item)
+                                            if let elapsed = pos.elapsedString {
+                                                Text(elapsed)
+                                                    .font(.system(size: 8))
+                                                    .foregroundColor(.gray)
+                                                    .padding(.bottom, 2)
+                                            }
+                                        }
                                     } else {
                                         Text(item.typeTitle).font(.system(size: 10, weight: .bold)).foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 2).background(item.buttonCase.color).classCornerRadius(4)
                                     }
