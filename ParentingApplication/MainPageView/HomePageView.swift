@@ -30,11 +30,13 @@ class AppState {
 enum ActivityItem: Identifiable {
     case wakeup(WakeupActivity)
     case sleep(SleepActivity)
+    case custom(CustomActivity)
     
     var id: PersistentIdentifier {
         switch self {
         case .wakeup(let a): return a.persistentModelID
         case .sleep(let a): return a.persistentModelID
+        case .custom(let a): return a.persistentModelID
         }
     }
     
@@ -42,6 +44,7 @@ enum ActivityItem: Identifiable {
         switch self {
         case .wakeup(let a): return a.timestamp
         case .sleep(let a): return a.timestamp
+        case .custom(let a): return a.timestamp
         }
     }
     
@@ -49,6 +52,7 @@ enum ActivityItem: Identifiable {
         switch self {
         case .wakeup(let a): return a.note
         case .sleep(let a): return a.note
+        case .custom(let a): return a.note
         }
     }
     
@@ -56,6 +60,7 @@ enum ActivityItem: Identifiable {
         switch self {
         case .wakeup: return "起床"
         case .sleep: return "睡覺"
+        case .custom(let a): return a.isStart ? "開始" : "結束"
         }
     }
 }
@@ -81,6 +86,19 @@ class SleepActivity {
     init(timestamp : Date, note : String) {
         self.timestamp = timestamp
         self.note = note
+    }
+}
+
+@Model
+class CustomActivity {
+    var timestamp: Date
+    var note: String
+    var isStart: Bool
+
+    init(timestamp : Date, note : String, isStart: Bool) {
+        self.timestamp = timestamp
+        self.note = note
+        self.isStart = isStart
     }
 }
 
@@ -192,6 +210,7 @@ struct DailyTimelineView: View {
     
     @Query private var wakeups: [WakeupActivity]
     @Query private var sleeps: [SleepActivity]
+    @Query private var customActivities: [CustomActivity]
     
     // 用於開啟編輯視圖的狀態
     @State private var editingActivity: ActivityItem?
@@ -216,7 +235,7 @@ struct DailyTimelineView: View {
         }
     }
 
-    // 計算當天的活動狀態區塊
+    // 計算當天的活動狀態區塊 (起床/睡覺)
     private var statusBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
         let calendar = Calendar.current
         let now = Date()
@@ -237,15 +256,10 @@ struct DailyTimelineView: View {
         
         var blocks: [(start: CGFloat, end: CGFloat, color: Color)] = []
         
-        // 第一區塊：從 00:00 到第一個活動
         if let first = sorted.first {
             let startY = 0.0
             var endY = yOffset(for: first.t)
-            
-            // 如果是今天，不超過現在時間
-            if isToday {
-                endY = min(endY, nowY)
-            }
+            if isToday { endY = min(endY, nowY) }
             
             let color = (first.s == "wakeup") ? Color.white : Color.yellow
             if startY < endY {
@@ -253,12 +267,9 @@ struct DailyTimelineView: View {
             }
         }
         
-        // 中間與結尾區塊
         for i in 0..<sorted.count {
             let current = sorted[i]
             let startY = yOffset(for: current.t)
-            
-            // 如果起始時間已經超過現在時間（且是今天），就不再畫色塊
             if isToday && startY >= nowY { break }
             
             var endY: CGFloat
@@ -268,14 +279,66 @@ struct DailyTimelineView: View {
                 endY = 24 * hourHeight
             }
             
-            // 如果是今天，結束時間不超過現在時間
-            if isToday {
-                endY = min(endY, nowY)
-            }
+            if isToday { endY = min(endY, nowY) }
             
             let color = (current.s == "wakeup") ? Color.yellow : Color.white
             if startY < endY {
                 blocks.append((startY, endY, color))
+            }
+        }
+        
+        return blocks
+    }
+    
+    // 計算當天的自定義活動區塊 (淡藍色)
+    private var customActivityBlocks: [(start: CGFloat, end: CGFloat, color: Color)] {
+        let calendar = Calendar.current
+        let now = Date()
+        let isToday = calendar.isDate(appState.currentDate, inSameDayAs: now)
+        let nowY = yOffset(for: now)
+        
+        let startOfDay = calendar.startOfDay(for: appState.currentDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        let todayCustom = customActivities
+            .filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }
+            .sorted { $0.timestamp < $1.timestamp }
+        
+        if todayCustom.isEmpty { return [] }
+        
+        var blocks: [(start: CGFloat, end: CGFloat, color: Color)] = []
+        var activeStart: CGFloat? = nil
+        
+        for activity in todayCustom {
+            let currentY = yOffset(for: activity.timestamp)
+            
+            if activity.isStart {
+                // 如果是「開始」，記錄起始位置
+                activeStart = currentY
+            } else {
+                // 如果是「結束」，若目前有進行中的開始，則閉合區間
+                if let start = activeStart {
+                    var endY = currentY
+                    if isToday { endY = min(endY, nowY) }
+                    
+                    if start < endY {
+                        blocks.append((start, endY, Color.blue.opacity(0.3)))
+                    }
+                    activeStart = nil
+                }
+            }
+            
+            // 如果已經超過現在時間，就不再處理後續
+            if isToday && currentY >= nowY { break }
+        }
+        
+        // 處理當天最後一個「開始」但沒有「結束」的情況（持續到天末或現在）
+        if let start = activeStart {
+            var endY = 24 * hourHeight
+            if isToday { endY = min(endY, nowY) }
+            
+            if start < endY {
+                blocks.append((start, endY, Color.blue.opacity(0.3)))
             }
         }
         
@@ -290,8 +353,9 @@ struct DailyTimelineView: View {
 
         let w = wakeups.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.wakeup($0) }
         let s = sleeps.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.sleep($0) }
+        let c = customActivities.filter { $0.timestamp >= startOfDay && $0.timestamp < endOfDay }.map { ActivityItem.custom($0) }
 
-        return (w + s).sorted { $0.timestamp < $1.timestamp }
+        return (w + s + c).sorted { $0.timestamp < $1.timestamp }
     }
     
     private func updateDate(offset: Int) {
@@ -346,8 +410,9 @@ struct DailyTimelineView: View {
                     ScrollView {
                         ZStack(alignment: .topLeading) {
                             let columnWidth = UIScreen.main.bounds.width / 4 - 10
+                            let customBlockWidth = columnWidth * 0.75
                             
-                            // 第一層：背景色塊
+                            // 第一層：背景色塊 (起床/睡覺)
                             ForEach(0..<statusBlocks.count, id: \.self) { index in
                                 let block = statusBlocks[index]
                                 Rectangle()
@@ -355,13 +420,30 @@ struct DailyTimelineView: View {
                                     .frame(width: columnWidth, height: block.end - block.start)
                                     .offset(x: timeLabelWidth, y: block.start)
                             }
+                            
+                            // 第一.五層：背景色塊 (自定義活動 - 淡藍色，寬度為 3/4)
+                            ForEach(0..<customActivityBlocks.count, id: \.self) { index in
+                                let block = customActivityBlocks[index]
+                                Rectangle()
+                                    .fill(block.color)
+                                    .frame(width: customBlockWidth, height: block.end - block.start)
+                                    .offset(x: timeLabelWidth + columnWidth, y: block.start)
+                            }
 
-                            // 第二層：起床/睡覺方形按鈕標籤
+                            // 第二層：活動方形按鈕標籤
                             ForEach(todayActivityItems) { item in
-                                let isWakeup: Bool = {
-                                    if case .wakeup = item { return true }
-                                    return false
+                                let labelColor: Color = {
+                                    switch item {
+                                    case .wakeup: return Color.orange
+                                    case .sleep: return Color.indigo
+                                    case .custom: return Color.green
+                                    }
                                 }()
+                                
+                                // 計算標籤的 X 偏移量
+                                // 如果是 custom，則往右偏移到它的專屬區域 (放在 3/4 寬度的中央)
+                                let isCustom: Bool = { if case .custom = item { return true }; return false }()
+                                let labelX = isCustom ? (timeLabelWidth + columnWidth + (customBlockWidth / 2) - 15) : (timeLabelWidth + (columnWidth / 2) - 15)
                                 
                                 Button(action: {
                                     editingActivity = item
@@ -371,10 +453,10 @@ struct DailyTimelineView: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(isWakeup ? Color.orange : Color.indigo)
+                                        .background(labelColor)
                                         .classCornerRadius(4)
                                 }
-                                .offset(x: timeLabelWidth + (columnWidth / 2) - 15, y: yOffset(for: item.timestamp) - 10)
+                                .offset(x: labelX, y: yOffset(for: item.timestamp) - 10)
                             }
 
                             // 第三層：時間軸格線與活動
@@ -436,6 +518,7 @@ struct ActivityEditView: View {
     
     @State private var selectedTime: Date
     @State private var note: String
+    @State private var isStart: Bool = true
     
     init(item: ActivityItem, onDismiss: @escaping () -> Void) {
         self.item = item
@@ -443,6 +526,10 @@ struct ActivityEditView: View {
         // 初始化 State 為目前的資料內容
         _selectedTime = State(initialValue: item.timestamp)
         _note = State(initialValue: item.note)
+        
+        if case .custom(let activity) = item {
+            _isStart = State(initialValue: activity.isStart)
+        }
     }
     
     private func saveChanges() {
@@ -465,6 +552,10 @@ struct ActivityEditView: View {
         case .sleep(let activity):
             activity.timestamp = finalDate
             activity.note = note
+        case .custom(let activity):
+            activity.timestamp = finalDate
+            activity.note = note
+            activity.isStart = isStart
         }
         
         try? modelContext.save()
@@ -477,6 +568,8 @@ struct ActivityEditView: View {
             modelContext.delete(activity)
         case .sleep(let activity):
             modelContext.delete(activity)
+        case .custom(let activity):
+            modelContext.delete(activity)
         }
         try? modelContext.save()
         onDismiss()
@@ -485,11 +578,20 @@ struct ActivityEditView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("編輯\(item.typeTitle)行程").font(.headline).padding(.top)
+                Text("編輯紀錄").font(.headline).padding(.top)
                 
                 DatePicker("時間", selection: $selectedTime, displayedComponents: .hourAndMinute)
                     .datePickerStyle(.wheel)
                     .labelsHidden()
+                
+                if case .custom = item {
+                    Toggle("活動狀態：\(isStart ? "開始" : "結束")", isOn: $isStart)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(8)
+                        .padding(.horizontal)
+                }
                 
                 TextField("備註", text: $note)
                     .textFieldStyle(.roundedBorder)
@@ -535,6 +637,7 @@ struct ButtonDestinationView: View {
 
     @State private var selectedTime = Date()
     @State private var note: String = ""
+    @State private var isStart: Bool = true // 專供給活動按鈕使用
 
     private func _ToAppDate(time: Date) -> Date {
         let calendar = Calendar.current
@@ -551,17 +654,25 @@ struct ButtonDestinationView: View {
 
     var body: some View {
         VStack {
-            if buttonCase == .wakeup || buttonCase == .sleep {
-                VStack(spacing: 20) {
-                    Text(buttonCase == .wakeup ? "新增起床時間" : "新增睡覺時間").font(.headline)
-                    DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                        .datePickerStyle(.wheel).labelsHidden()
-                    TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
+            VStack(spacing: 20) {
+                Text("新增\(buttonCase.title)").font(.headline)
+                
+                DatePicker("Time", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel).labelsHidden()
+                
+                if buttonCase == .customActivity {
+                    Toggle(isOn: $isStart) {
+                        Text(isStart ? "標記為：開始" : "標記為：結束")
+                            .fontWeight(.bold)
+                    }
+                    .toggleStyle(.button)
+                    .tint(isStart ? .green : .red)
+                    .padding(.bottom, 10)
                 }
-                .padding()
-            } else {
-                Text("Detail for \(buttonCase.title)").padding()
+                
+                TextField("輸入備註...", text: $note).textFieldStyle(.roundedBorder).padding(.horizontal)
             }
+            .padding()
             
             Spacer()
 
@@ -569,10 +680,15 @@ struct ButtonDestinationView: View {
                 Button("Cancel") { onDismiss() }.buttonStyle(.bordered).tint(.gray)
                 Button("Confirm") {
                     let finalDate = _ToAppDate(time: selectedTime)
-                    if buttonCase == .wakeup {
+                    switch buttonCase {
+                    case .wakeup:
                         modelContext.insert(WakeupActivity(timestamp: finalDate, note: note))
-                    } else if buttonCase == .sleep {
+                    case .sleep:
                         modelContext.insert(SleepActivity(timestamp: finalDate, note: note))
+                    case .customActivity:
+                        modelContext.insert(CustomActivity(timestamp: finalDate, note: note, isStart: isStart))
+                    default:
+                        break
                     }
                     try? modelContext.save()
                     onDismiss()
@@ -587,13 +703,13 @@ struct ButtonDestinationView: View {
 }
 
 enum HomePageButtonCase: Int, Identifiable, CaseIterable{
-    case wakeup = 1, sleep = 2, diaper = 3, growth = 5, setting = 6
+    case wakeup = 1, sleep = 2, customActivity = 3, growth = 5, setting = 6
     var id: Int { self.rawValue }
     var title: String {
         switch self {
         case .wakeup: return "起床"
         case .sleep: return "睡覺"
-        case .diaper: return "尿布"
+        case .customActivity: return "活動"
         case .growth: return "成長"
         case .setting: return "設定"
         }
@@ -602,7 +718,7 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
         switch self {
         case .wakeup: return "sun.max.fill"
         case .sleep: return "moon.zzz.fill" 
-        case .diaper: return "water.waves"
+        case .customActivity: return "figure.run"
         case .growth: return "chart.line.uptrend.xyaxis"
         case .setting: return "gearshape.fill"
         }
@@ -611,7 +727,7 @@ enum HomePageButtonCase: Int, Identifiable, CaseIterable{
         switch self {
         case .wakeup: return .orange
         case .sleep: return .indigo
-        case .diaper: return .green
+        case .customActivity: return .green
         case .growth: return .pink
         case .setting: return .gray
         }

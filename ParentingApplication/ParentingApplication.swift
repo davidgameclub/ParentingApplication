@@ -11,7 +11,12 @@ import SwiftData
 @main
 struct ParentingApplication: App {
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([WakeupActivity.self, FeedingBottleActivity.self])
+        let schema = Schema([
+            WakeupActivity.self,
+            SleepActivity.self,
+            CustomActivity.self,
+            FeedingBottleActivity.self,
+        ])
 
         // 關鍵點：將 isStoredInMemoryOnly 設為 true
         let modelConfiguration = ModelConfiguration(
@@ -33,7 +38,8 @@ struct ParentingApplication: App {
         .modelContainer(for: [
             UserProfile.self,
             WakeupActivity.self,
-            SleepActivity.self
+            SleepActivity.self,
+            CustomActivity.self
         ])
     }
 }
