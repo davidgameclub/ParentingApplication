@@ -41,6 +41,7 @@ struct ParentingApplication: App {
             WakeupActivity.self,
             SleepActivity.self,
             CustomActivity.self,
+            FeedingBottleActivity.self,
             DiaperActivity.self
         ])
     }
