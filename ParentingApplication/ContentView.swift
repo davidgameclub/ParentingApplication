@@ -40,18 +40,18 @@ struct ContentView: View {
                 Group {
                     if let profile = profiles.first {
                         List {
-                            Section("Profile Details") {
-                                LabeledContent("Name", value: profile.name)
-                                LabeledContent("Gender", value: profile.gender)
-                                LabeledContent("Birthday", value: profile.birthDate.formatted(date: .long, time: .omitted))
+                            Section("寶寶資料") {
+                                LabeledContent("暱稱", value: profile.name)
+                                LabeledContent("性別", value: profile.gender)
+                                // 使用指定的 Locale 確保日期顯示為「年月日」中文格式
+                                LabeledContent("生日", value: profile.birthDate.formatted(.dateTime.year().month().day().locale(Locale(identifier: "zh_Hant_TW"))))
                             }
                             
-                            // --- New Button Added Here ---
                             Section {
                                 NavigationLink {
                                     MainMenuView()
                                 } label: {
-                                    Text("Go to Main Menu")
+                                    Text("進入主選單")
                                         .bold()
                                         .frame(maxWidth: .infinity)
                                 }
@@ -61,11 +61,11 @@ struct ContentView: View {
                                 Button(role: .destructive) {
                                     deleteProfile(profile)
                                 } label: {
-                                    Text("Delete and Create New")
+                                    Text("刪除並重新建立")
                                         .frame(maxWidth: .infinity)
                                 }
                             } footer: {
-                                Text("To change your information, you must delete the current profile.")
+                                Text("若要修改資料，您必須先刪除目前的檔案。")
                             }
                         }
                         .scrollContentBackground(.hidden)
@@ -107,7 +107,7 @@ struct ContentView: View {
                                         navigateToGender = true
                                     }
                                 }) {
-                                    Text("Next")
+                                    Text("下一步")
                                         .bold()
                                         .frame(maxWidth: .infinity)
                                         .padding()
@@ -165,39 +165,40 @@ struct GenderView: View {
     let name: String
     var onComplete: () -> Void
     
-    @State private var selectedGender: String = "Select"
+    @State private var selectedGender: String = ""
     @State private var navigateToBirth = false
-    let genders = ["NO","Male", "Female","OTHER","NOT"]
+    let genders = ["男生", "女生"]
     
     var body: some View {
         VStack {
             Spacer()
             VStack(spacing: 24) {
-                Text("Welcome, \(name)")
+                Text("歡迎，\(name)")
                     .font(.title2)
                     .bold()
                 
-                Text("Please select your gender")
+                Text("請選擇寶寶性別")
                     .foregroundColor(.secondary)
                 
                 Picker("Gender", selection: $selectedGender) {
+                    Text("請選擇").tag("")
                     ForEach(genders, id: \.self) { gender in
-                        Text(gender)
+                        Text(gender).tag(gender)
                     }
                 }
                 .pickerStyle(.wheel)
                 .frame(height: 150)
                 
                 Button(action: { navigateToBirth = true }) {
-                    Text("Next")
+                    Text("下一步")
                         .bold()
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(selectedGender == "Select" ? Color.gray.opacity(0.3) : Color.blue)
+                        .background(selectedGender.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
                         .foregroundColor(.white)
                         .cornerRadius(12)
                 }
-                .disabled(selectedGender == "Select")
+                .disabled(selectedGender.isEmpty)
                 .padding(.horizontal, 40)
             }
             Spacer()
@@ -205,7 +206,7 @@ struct GenderView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(UIColor.systemGray6).ignoresSafeArea())
-        .navigationTitle("Gender")
+        .navigationTitle("性別設定")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $navigateToBirth) {
             BirthView(name: name, gender: selectedGender, onComplete: onComplete)
@@ -225,7 +226,7 @@ struct BirthView: View {
         VStack {
             Spacer()
             VStack(spacing: 24) {
-                Text("When were you born?")
+                Text("寶寶什麼時候出生的？")
                     .font(.title2)
                     .bold()
                 
@@ -236,10 +237,11 @@ struct BirthView: View {
                 )
                 .datePickerStyle(.wheel)
                 .labelsHidden()
+                .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
                 .frame(height: 200)
                 
                 Button(action: saveProfile) {
-                    Text("Complete Profile")
+                    Text("完成設定")
                         .bold()
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -254,7 +256,7 @@ struct BirthView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(UIColor.systemGray6).ignoresSafeArea())
-        .navigationTitle("Birthday")
+        .navigationTitle("出生日期")
         .navigationBarTitleDisplayMode(.inline)
     }
     
@@ -273,29 +275,25 @@ struct FireworksView: UIViewRepresentable {
         view.isUserInteractionEnabled = false
         
         let emitter = CAEmitterLayer()
-        // 設定在螢幕底部中央
         emitter.emitterPosition = CGPoint(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height + 10)
-        emitter.emitterShape = .point // 使用點發射，然後用 emissionRange 控制發散角度
-        emitter.emitterSize = CGSize(width: 1, height: 1) // 設置為點
+        emitter.emitterShape = .point
+        emitter.emitterSize = CGSize(width: 1, height: 1)
         
         let colors: [UIColor] = [.systemRed, .systemBlue, .systemYellow, .systemGreen, .systemPink, .systemPurple, .systemOrange]
         
         let cells = colors.map { color -> CAEmitterCell in
             let cell = CAEmitterCell()
-            cell.birthRate = 60 // 增加總量，讓一秒內看起來足夠多
-            cell.lifetime = 1.5 // 縮短生命週期，讓效果更集中在短時間內 (配合 1.0s 總顯示時間)
-            cell.velocity = CGFloat.random(in: 400...600) // 速度適中
+            cell.birthRate = 60
+            cell.lifetime = 1.5
+            cell.velocity = CGFloat.random(in: 400...600)
             cell.velocityRange = 50
-            
-            // 關鍵調整：指向正上方 (-.pi / 2)，並設定較大的發散角度 (emissionRange = 2.0 徑度) 以向兩側擴散
-            cell.emissionLongitude = -.pi / 2 // 正上方
-            cell.emissionRange = 2.0 // 寬廣的發散角度 (約 114.6 度)
-            
+            cell.emissionLongitude = -.pi / 2
+            cell.emissionRange = 2.0
             cell.spin = 1
             cell.spinRange = 5
             cell.scale = 0.05
             cell.scaleRange = 0.1
-            cell.alphaSpeed = -0.3 // 讓淡出更快一些
+            cell.alphaSpeed = -0.3
             cell.color = color.cgColor
             cell.contents = createConfettiImage()?.cgImage
             return cell
@@ -313,13 +311,10 @@ struct FireworksView: UIViewRepresentable {
         let size = CGSize(width: 20, height: 20)
         UIGraphicsBeginImageContextWithOptions(size, false, 0)
         let context = UIGraphicsGetCurrentContext()
-        
-        // 為了模擬碎片，我們在中央繪製一個小方塊
         context?.setFillColor(UIColor.clear.cgColor)
         context?.fill(CGRect(origin: .zero, size: size))
         context?.setFillColor(UIColor.white.cgColor)
         context?.fill(CGRect(x: 2, y: 2, width: size.width - 4, height: size.height - 4))
-        
         let image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
         return image
